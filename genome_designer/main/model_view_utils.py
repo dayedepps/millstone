@@ -225,6 +225,7 @@ def create_alt_flag_field(variant_as_dict, melted, maybe_dec):
                 alt = maybe_surrounding_brackets_match.group(1)
             group = list(group)
             num_het = sum([alt_het[1] for alt_het in group])
+            alt = _maybe_format_bnd_alt(alt, variant_as_dict)
             alt_string = ' %s (%d)' % (alt, len(list(group)) - maybe_dec)
             if num_het:
                 alt_string += (
@@ -245,9 +246,22 @@ def create_alt_flag_field(variant_as_dict, melted, maybe_dec):
         maybe_surrounding_brackets_match = re.match(r'<([\w]+)>', value)
         if maybe_surrounding_brackets_match:
             value = maybe_surrounding_brackets_match.group(1)
+
+        value = _maybe_format_bnd_alt(value, variant_as_dict)
+
         if ve_data and ve_data.get(MELTED_SCHEMA_KEY__HET, False):
             value += (
                     ' <span class="%s" ' +
                     'title="Marginal call (IS_HET=TRUE)">' +
                     '&frac12;</span>') % marginal_set_classes
+    return value
+
+
+def _maybe_format_bnd_alt(value, variant_as_dict):
+    """Some cleanup if BND (break end) SV type.
+    """
+    if (variant_as_dict.get('VA_DATA', None) is not None and
+            'INFO_SVTYPE' in variant_as_dict['VA_DATA'] and
+            variant_as_dict['VA_DATA']['INFO_SVTYPE'] == 'BND'):
+        value = 'BND ({raw})'.format(raw=value)
     return value
