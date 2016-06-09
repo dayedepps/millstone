@@ -33,7 +33,7 @@ InsertionVertices = namedtuple('InsertionVertices',
 def get_genbank_features_with_type(genbank_path, feature_type):
 
     chrom_intervals = {}
-    with open(genbank_path, 'r') as fh:
+    with open(genbank_path, 'r') as fh:%
         for seq_record in SeqIO.parse(fh, 'genbank'):
             interval_list = []
             for f in seq_record.features:
@@ -219,7 +219,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         coverage_stats = get_coverage_stats(sample_alignment)
         sample_alignment_bam = sample_alignment.dataset_set.get(
             type=Dataset.TYPE.BWA_ALIGN).get_absolute_location()
-    for insertion_vertices in iv_list:
+    for insertion_vertices in iv_list:S
 
         contig_qname = insertion_vertices.enter_contig.seq_uid
         contig_uid = contig_qname_to_uid[contig_qname]
@@ -612,12 +612,12 @@ def me_translocation_walk(G):
     contig_seq_uid_set = set(ci.seq_uid for ci in
             G.contig_intervals_list.values())
 
-    def ref_neighbors(vert):
+    def ref_neighbors(vert, G, ref_seq_uid_set):
         if vert not in G:
             return []
         return [v for v in G.neighbors(vert) if v.seq_uid in ref_seq_uid_set]
 
-    def contig_neighbors(vert):
+    def contig_neighbors(vert, G, contig_seq_uid_set):
         if vert not in G:
             return []
         return [v for v in G.neighbors(vert) if v.seq_uid in
@@ -626,6 +626,7 @@ def me_translocation_walk(G):
     forward_edges = []
     back_edges = []
 
+    # get a list of vertices across all mobile elements
     me_vertices = reduce(lambda x, y: x + y,
             [si.vertices for si in G.me_interval_dict.values()])
 
@@ -726,7 +727,8 @@ def strand_filter(G, me_iv_pairs):
                 enter_iv.enter_ref.seq_uid.endswith('_RC') ==
                 exit_iv.exit_ref.seq_uid.endswith('_RC'))
 
-        if me_strand_agreement and enter_me_agreement and exit_me_agreement:
+        # Currently not using the exit/enter_me_agreement flags.
+        if me_strand_agreement:
             filtered.append(iv_pair)
 
     return filtered
@@ -886,6 +888,9 @@ def translocation_walk(G):
 
 
 class SequenceVertex:
+    '''
+    These objects serve as nodes on the Graph.
+    '''
 
     def __init__(self, seq_uid, pos, parent):
         self.parent = parent
