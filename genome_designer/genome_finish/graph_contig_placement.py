@@ -33,7 +33,7 @@ InsertionVertices = namedtuple('InsertionVertices',
 def get_genbank_features_with_type(genbank_path, feature_type):
 
     chrom_intervals = {}
-    with open(genbank_path, 'r') as fh:%
+    with open(genbank_path, 'r') as fh:
         for seq_record in SeqIO.parse(fh, 'genbank'):
             interval_list = []
             for f in seq_record.features:
@@ -125,7 +125,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             os.path.join(contig_alignment_base_dir, str(i))
             for i in xrange(sys.maxint)
             if not os.path.exists(
-                    os.path.join(contig_alignment_base_dir, str(i)))).next()
+                    os.path.j%oin(contig_alignment_base_dir, str(i)))).next()
 
     os.mkdir(contig_alignment_dir)
 
