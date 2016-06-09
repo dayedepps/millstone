@@ -9,6 +9,8 @@ import pysam
 
 from genome_finish import __path__ as gf_path_list
 from genome_finish.insertion_placement_read_trkg import extract_left_and_right_clipped_read_dicts
+from pipeline.read_alignment import _filter_out_interchromosome_reads
+from pipeline.read_alignment_util import index_bam_file
 from main.models import Dataset
 from main.models import Variant
 from main.models import VariantSet
@@ -304,6 +306,42 @@ def get_split_reads(bam_filename, output_filename):
     except subprocess.CalledProcessError:
         raise Exception('Exception caught in split reads generator, ' +
                         'perhaps due to no split reads')
+
+def get_discordant_read_pairs(bam_filename, output_filename):
+    """Isolate discordant pairs of reads from a sample alignment.
+    """
+    assert os.path.exists(bam_filename), "BAM file '%s' is missing." % (
+            bam_filename)
+
+    # NOTE: This assumes the index just adds at .bai, w/ same path otherwise
+    # - will this always be true?
+    if not os.path.exists(bam_filename+'.bai'):
+        index_bam_file(bam_filename)
+
+    # Use bam read alignment flags to pull out discordant pairs only
+    filter_discordant = ' | '.join([
+            '{samtools} view -u -F 0x0002 {bam_filename} ',
+            '{samtools} view -u -F 0x0100 - ',
+            '{samtools} view -u -F 0x0004 - ',
+            '{samtools} view -u -F 0x0008 - ',
+            '{samtools} view -b -F 0x0400 - ']).format(
+                    samtools=settings.SAMTOOLS_BINARY,
+                    bam_filename=bam_filename)
+
+    try:
+        with open(output_filename, 'w') as fh:
+            subprocess.check_call(filter_discordant,
+                    stdout=fh, shell=True, executable=settings.BASH_PATH)
+
+        # sort the discordant reads, overwrite the old file
+        subprocess.check_call([settings.SAMTOOLS_BINARY, 'sort', output_filename,
+                os.path.splitext(output_filename)[0]])
+
+        _filter_out_interchromosome_reads(output_filename)
+
+    except subprocess.CalledProcessError:
+        raise Exception('Exception caught in discordant reads generator, '+
+                'perhaps due to no discordant reads')
 
 
 def _parse_sam_line(line):

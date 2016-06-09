@@ -27,8 +27,11 @@ from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
 from main.models import Variant
 from main.model_utils import get_dataset_with_type
+from pipeline.read_alignment import get_discordant_read_pairs
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
+from pipeline.read_alignment import get_split_reads
 from pipeline.read_alignment_util import ensure_bwa_index
+
 from utils.bam_utils import concatenate_bams
 from utils.bam_utils import index_bam
 from utils.bam_utils import make_bam
@@ -82,6 +85,14 @@ CUSTOM_SV_METHODS = [
     'GRAPH_WALK',
     'COVERAGE'
 ]
+
+STRUCTURAL_VARIANT_BAM_DATASETS = [
+        Dataset.TYPE.BWA_ALTALIGN,
+        Dataset.TYPE.BWA_PILED,
+        Dataset.TYPE.BWA_CLIPPED,
+        Dataset.TYPE.BWA_SPLIT,
+        Dataset.TYPE.BWA_UNMAPPED,
+        Dataset.TYPE.BWA_DISCORDANT]
 
 
 def run_de_novo_assembly_pipeline(sample_alignment_list,
@@ -271,14 +282,7 @@ def generate_contigs(sample_alignment,
 def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
         overwrite=False):
 
-    sv_indicant_keys = [
-            Dataset.TYPE.BWA_ALTALIGN,
-            Dataset.TYPE.BWA_PILED,
-            Dataset.TYPE.BWA_CLIPPED,
-            Dataset.TYPE.BWA_SPLIT,
-            Dataset.TYPE.BWA_UNMAPPED,
-            Dataset.TYPE.BWA_DISCORDANT
-    ]
+    sv_indicant_keys = STRUCTURAL_VARIANT_BAM_DATASETS
 
     sv_indicant_class_to_filename_suffix = {
             Dataset.TYPE.BWA_ALTALIGN: 'altalign',
@@ -296,8 +300,10 @@ def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
                     i, o,
                     phred_encoding=sample_alignment.experiment_sample.data.get(
                             'phred_encoding', None)),
+            Dataset.TYPE.BWA_SPLIT: get_split_reads,
             Dataset.TYPE.BWA_UNMAPPED: lambda i, o: get_unmapped_reads(
-                    i, o, avg_phred_cutoff=20)
+                    i, o, avg_phred_cutoff=20),
+            Dataset.TYPE.BWA_DISCORDANT: get_discordant_read_pairs
     }
 
     default_sv_indicant_classes = {
@@ -347,7 +353,7 @@ def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
             assert len(dataset_query) == 1
             dataset_query[0].delete()
 
-        if overwrite and key in sv_indicant_class_to_generator or (
+        if (overwrite and key in sv_indicant_class_to_generator) or (
                 not dataset_query.exists()):
             dataset_path = '.'.join([
                     alignment_file_prefix,
@@ -683,6 +689,8 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     sample_alignment.dataset_set.filter(
             type__in=STRUCTURAL_VARIANT_VCF_DATASETS).delete()
 
+    sample_alignment.dataset_set.filter(
+            type__in=STRUCTURAL_VARIANT_BAM_DATASETS).delete()
 
 def get_de_novo_variants(sample_alignment, sv_methods=CUSTOM_SV_METHODS):
     """Returns list of Variant objects corresponding to those called by
