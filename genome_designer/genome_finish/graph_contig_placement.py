@@ -125,7 +125,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             os.path.join(contig_alignment_base_dir, str(i))
             for i in xrange(sys.maxint)
             if not os.path.exists(
-                    os.path.j%oin(contig_alignment_base_dir, str(i)))).next()
+                    os.path.join(contig_alignment_base_dir, str(i)))).next()
 
     os.mkdir(contig_alignment_dir)
 
