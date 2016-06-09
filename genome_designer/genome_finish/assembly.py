@@ -18,6 +18,7 @@ from genome_finish.millstone_de_novo_fns import add_paired_mates
 from genome_finish.millstone_de_novo_fns import filter_low_qual_read_pairs
 from genome_finish.millstone_de_novo_fns import filter_out_unpaired_reads
 from genome_finish.millstone_de_novo_fns import get_altalign_reads
+from genome_finish.millstone_de_novo_fns import get_discordant_read_pairs
 from genome_finish.millstone_de_novo_fns import get_piled_reads
 from genome_finish.millstone_de_novo_fns import get_clipped_reads_smart
 from genome_finish.millstone_de_novo_fns import get_avg_genome_coverage
@@ -27,7 +28,6 @@ from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
 from main.models import Variant
 from main.model_utils import get_dataset_with_type
-from pipeline.read_alignment import get_discordant_read_pairs
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
 from genome_finish.millstone_de_novo_fns import get_split_reads
 from pipeline.read_alignment_util import ensure_bwa_index
