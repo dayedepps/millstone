@@ -650,7 +650,8 @@ def parse_variants_from_vcf(sample_alignment,
             assert dataset_query.count() == 1
             parsed_variants = parse_vcf(
                     dataset_query[0],
-                    sample_alignment.alignment_group)
+                    sample_alignment.alignment_group,
+                    should_update_parent_child_relationships=False)
 
             variant_list.extend(parsed_variants)
 
