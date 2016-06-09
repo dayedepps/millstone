@@ -30,8 +30,13 @@ from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
 from main.models import Variant
 from main.model_utils import get_dataset_with_type
+from pipeline.read_alignment import get_discordant_read_pairs
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
+<<<<<<< HEAD
 from genome_finish.millstone_de_novo_fns import get_split_reads
+=======
+from pipeline.read_alignment import get_split_reads
+>>>>>>> Fix BAM dataset delete and regen for SVs.
 from pipeline.read_alignment_util import ensure_bwa_index
 
 from utils.bam_utils import concatenate_bams

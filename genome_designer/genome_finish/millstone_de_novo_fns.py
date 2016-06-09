@@ -151,8 +151,92 @@ def get_unmapped_reads(bam_filename, output_filename, avg_phred_cutoff=None):
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def get_split_reads(bam_filename, output_filename):
     """Isolate split reads from a sample alignment.
+=======
+def get_split_reads(bam_filename, output_filename):
+    """Isolate split reads from a sample alignment.
+
+    This uses a python script supplied with Lumppy, that is run as a
+    separate process.
+
+    NOTE THAT THIS SCRIPT ONLY WORKS WITH BWA MEM.
+    """
+
+    # Use lumpy bwa-mem split read script to pull out split reads.
+    filter_split_reads = ' | '.join([
+            # -F 0x100 option filters out secondary alignments
+            '{samtools} view -h -F 0x100 {bam_filename}',
+            'python {lumpy_bwa_mem_sr_script} -i stdin',
+            '{samtools} view -Sb -']).format(
+                    samtools=SAMTOOLS_BINARY,
+                    bam_filename=bam_filename,
+                    lumpy_bwa_mem_sr_script=
+                            settings.LUMPY_EXTRACT_SPLIT_READS_BWA_MEM)
+
+    try:
+        with open(output_filename, 'w') as fh:
+            subprocess.check_call(
+                    filter_split_reads, stdout=fh, shell=True,
+                    executable=BASH_PATH)
+
+        # sort the split reads, overwrite the old file
+        subprocess.check_call(
+                [SAMTOOLS_BINARY, 'sort', output_filename,
+                 os.path.splitext(output_filename)[0]])
+
+    except subprocess.CalledProcessError:
+        raise Exception('Exception caught in split reads generator, ' +
+                        'perhaps due to no split reads')
+
+def get_discordant_read_pairs(bam_filename, output_filename):
+    """Isolate discordant pairs of reads from a sample alignment.
+    """
+    assert os.path.exists(bam_filename), "BAM file '%s' is missing." % (
+            bam_filename)
+
+    # NOTE: This assumes the index just adds at .bai, w/ same path otherwise
+    # - will this always be true?
+    if not os.path.exists(bam_filename+'.bai'):
+        index_bam_file(bam_filename)
+
+    # Use bam read alignment flags to pull out discordant pairs only
+    filter_discordant = ' | '.join([
+            '{samtools} view -u -F 0x0002 {bam_filename} ',
+            '{samtools} view -u -F 0x0100 - ',
+            '{samtools} view -u -F 0x0004 - ',
+            '{samtools} view -u -F 0x0008 - ',
+            '{samtools} view -b -F 0x0400 - ']).format(
+                    samtools=settings.SAMTOOLS_BINARY,
+                    bam_filename=bam_filename)
+
+    try:
+        with open(output_filename, 'w') as fh:
+            subprocess.check_call(filter_discordant,
+                    stdout=fh, shell=True, executable=settings.BASH_PATH)
+
+        # sort the discordant reads, overwrite the old file
+        subprocess.check_call([settings.SAMTOOLS_BINARY, 'sort', output_filename,
+                os.path.splitext(output_filename)[0]])
+
+        _filter_out_interchromosome_reads(output_filename)
+
+    except subprocess.CalledProcessError:
+        raise Exception('Exception caught in discordant reads generator, '+
+                'perhaps due to no discordant reads')
+
+
+def _parse_sam_line(line):
+    parts = line.split()
+    return {
+        'read_id': parts[0],
+        'flags': parts[1]
+    }
+
+
+def add_paired_mates(input_sam_path, source_bam_filename, output_sam_path):
+>>>>>>> Fix BAM dataset delete and regen for SVs.
 
     This uses a python script supplied with Lumppy, that is run as a
     separate process.
