@@ -612,12 +612,12 @@ def me_translocation_walk(G):
     contig_seq_uid_set = set(ci.seq_uid for ci in
             G.contig_intervals_list.values())
 
-    def ref_neighbors(vert, G, ref_seq_uid_set):
+    def ref_neighbors(vert):
         if vert not in G:
             return []
         return [v for v in G.neighbors(vert) if v.seq_uid in ref_seq_uid_set]
 
-    def contig_neighbors(vert, G, contig_seq_uid_set):
+    def contig_neighbors(vert):
         if vert not in G:
             return []
         return [v for v in G.neighbors(vert) if v.seq_uid in
