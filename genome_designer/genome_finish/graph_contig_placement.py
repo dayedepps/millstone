@@ -205,7 +205,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     detect_strand_chromosome_junctions(contig_list, contig_alignment_bam)
 
     # Create dictionaries to translate contig uid to its fasta descriptor line
-    contig_name_to_uid = {}
+    contig_qname_to_uid = {}
     for contig in contig_list:
         with open(get_fasta(contig), 'r') as fh:
             descriptor = fh.next()
@@ -219,7 +219,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         coverage_stats = get_coverage_stats(sample_alignment)
         sample_alignment_bam = sample_alignment.dataset_set.get(
             type=Dataset.TYPE.BWA_ALIGN).get_absolute_location()
-    for insertion_vertices in iv_list:S
+    for insertion_vertices in iv_list:
 
         contig_qname = insertion_vertices.enter_contig.seq_uid
         contig_uid = contig_qname_to_uid[contig_qname]
