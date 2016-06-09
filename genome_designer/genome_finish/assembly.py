@@ -29,7 +29,7 @@ from main.models import Variant
 from main.model_utils import get_dataset_with_type
 from pipeline.read_alignment import get_discordant_read_pairs
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
-from pipeline.read_alignment import get_split_reads
+from genome_finish.millstone_de_novo_fns import get_split_reads
 from pipeline.read_alignment_util import ensure_bwa_index
 
 from utils.bam_utils import concatenate_bams
@@ -689,6 +689,7 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     sample_alignment.dataset_set.filter(
             type__in=STRUCTURAL_VARIANT_VCF_DATASETS).delete()
 
+    # Delete bam indicant read Datasets and files.
     sample_alignment.dataset_set.filter(
             type__in=STRUCTURAL_VARIANT_BAM_DATASETS).delete()
 
