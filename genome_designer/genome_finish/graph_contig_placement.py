@@ -205,7 +205,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     detect_strand_chromosome_junctions(contig_list, contig_alignment_bam)
 
     # Create dictionaries to translate contig uid to its fasta descriptor line
-    contig_qname_to_uid = {}
+    contig_name_to_uid = {}
     for contig in contig_list:
         with open(get_fasta(contig), 'r') as fh:
             descriptor = fh.next()
