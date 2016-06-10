@@ -193,13 +193,11 @@ def generate_contigs(sample_alignment,
             sample_alignment.get_model_data_dir(),
             'assembly')
 
-    # Make assembly directory if it does not exist
-    if not os.path.exists(assembly_dir):
-        os.mkdir(assembly_dir)
-    # if it does exist, empty it
-    else:
+    # Make assembly directory if it does not exist, and remove it if it does
+    if os.path.exists(assembly_dir):
         shutil.rmtree(assembly_dir)
-        os.mkdir(assembly_dir)
+    os.mkdir(assembly_dir)
+
 
     # Get a bam of sorted SV indicants with pairs
     sv_indicants_bam = get_sv_indicating_reads(sample_alignment,

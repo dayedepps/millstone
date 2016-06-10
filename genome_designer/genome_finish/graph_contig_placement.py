@@ -119,11 +119,10 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
 
     contig_alignment_dir = os.path.join(
             assembly_dir, 'contig_alignment')
-    if not os.path.exists(contig_alignment_dir):
-        os.mkdir(contig_alignment_dir)
-    else:
+
+    if os.path.exists(contig_alignment_dir):
         shutil.rmtree(contig_alignment_dir)
-        os.mkdir(contig_alignment_dir)
+    os.mkdir(contig_alignment_dir)
 
     # Concatenate contig fastas for alignment
     contig_fastas = [get_fasta(c) for c in contig_list]
