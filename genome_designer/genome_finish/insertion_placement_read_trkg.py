@@ -472,29 +472,32 @@ def write_read_query_alignments_to_fastq(reads, fastq_path,
         SeqIO.write(query_alignment_seqrecords, fastq_handle, 'fastq')
 
 
-def simple_align_with_bwa_mem(reads_fq, reference_fasta, output_bam_path):
+def simple_align_with_bwa_mem(reads_fq,
+        reference_fasta, output_bam_path, bwa_arg_list=[]):
 
     # Assert reference fasta is indexed
     assert has_bwa_index(reference_fasta)
 
     # Align clipped query alignment fastq to contig
-    align_input_args = ' '.join([
-            '%s/bwa/bwa' % settings.TOOLS_DIR,
-            'mem',
-            reference_fasta,
-            reads_fq])
+    align_input_args = ['%s/bwa/bwa' % settings.TOOLS_DIR, 'mem']
+
+    # add mem args
+    align_input_args.extend(bwa_arg_list)
+    align_input_args.extend([reference_fasta, reads_fq])
+
+    align_cmd = ' '.join(align_input_args)
 
     # Bwa mem calls reads clipped slightly at the end of the genome
     # as unmapped, so filter these out with -F 0x004
     # To skip saving the SAM file to disk directly, pipe output directly to
     # make a BAM file.
-    align_input_args += (' | ' + settings.SAMTOOLS_BINARY +
+    align_cmd += (' | ' + settings.SAMTOOLS_BINARY +
             ' view -F 0x004 -bS -')
 
     # Run alignment
     with open(output_bam_path, 'w') as fh:
         subprocess.check_call(
-                align_input_args, stdout=fh,
+                align_cmd, stdout=fh,
                 shell=True, executable=settings.BASH_PATH)
 
 

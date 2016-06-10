@@ -136,8 +136,9 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
 
     if ref_genome.is_annotated:
         ref_genome.ensure_mobile_element_multifasta()
-        me_fa_dataset = (ref_genome.dataset_set.get(
-                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+        me_fa_dataset = get_dataset_with_type(
+                ref_genome,
+                Dataset.TYPE.MOBILE_ELEMENT_FASTA)
         me_concat_fasta = me_fa_dataset.get_absolute_location()
 
         contig_alignment_to_me_bam = os.path.join(
@@ -148,7 +149,8 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             simple_align_with_bwa_mem(
                     contig_concat,
                     me_concat_fasta,
-                    contig_alignment_to_me_bam)
+                    contig_alignment_to_me_bam,
+                    ['-T', '15'])
 
     # Align concatenated contig fastas to reference
     ref_genome = contig_list[0].parent_reference_genome
@@ -158,7 +160,8 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     simple_align_with_bwa_mem(
             contig_concat,
             get_fasta(ref_genome),
-            contig_alignment_bam)
+            contig_alignment_bam,
+            ['-T', '15'])
 
     # Create graph
     G = nx.DiGraph()
