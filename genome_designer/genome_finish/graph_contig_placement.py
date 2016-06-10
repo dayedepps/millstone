@@ -1033,7 +1033,7 @@ def parse_path_into_ref_alt(path_list, contig_qname_to_uid,
             else:
                 seq_uid = enter_vert.seq_uid
 
-            me_fasta = sample_alignment.dataset_set.get(
+            me_fasta = ref_genome.dataset_set.get(
                     type=Dataset.TYPE.MOBILE_ELEMENT_FASTA
             ).get_absolute_location()
 
