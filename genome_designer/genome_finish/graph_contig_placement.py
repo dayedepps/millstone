@@ -1,6 +1,7 @@
 from collections import namedtuple
 import os
 import subprocess
+import shutil
 import sys
 
 from Bio import SeqIO
@@ -114,20 +115,13 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     # Make Assembly dir
     assembly_dir = contig_list[0].metadata['assembly_dir']
 
-    contig_alignment_base_dir = os.path.join(
+    contig_alignment_dir = os.path.join(
             assembly_dir, 'contig_alignment')
-    if not os.path.exists(contig_alignment_base_dir):
-        os.mkdir(contig_alignment_base_dir)
-
-    # Make a subdirectory within contig_alignment_base_dir with the
-    # next available integer that is not already a subdir as its name
-    contig_alignment_dir = (
-            os.path.join(contig_alignment_base_dir, str(i))
-            for i in xrange(sys.maxint)
-            if not os.path.exists(
-                    os.path.join(contig_alignment_base_dir, str(i)))).next()
-
-    os.mkdir(contig_alignment_dir)
+    if not os.path.exists(contig_alignment_dir):
+        os.mkdir(contig_alignment_dir)
+    else:
+        shutil.rmtree(contig_alignment_dir)
+        os.mkdir(contig_alignment_dir)
 
     # Concatenate contig fastas for alignment
     contig_fastas = [get_fasta(c) for c in contig_list]
