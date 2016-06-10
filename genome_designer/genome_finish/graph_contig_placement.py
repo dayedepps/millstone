@@ -18,6 +18,7 @@ from genome_finish.jbrowse_genome_finish import add_contig_reads_bam_track
 from main.models import Contig
 from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
+from main.model_utils import get_dataset_with_type
 from pipeline.read_alignment_util import ensure_bwa_index
 from utils.import_util import add_dataset_to_entity
 
