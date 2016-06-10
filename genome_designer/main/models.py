@@ -53,6 +53,7 @@ from model_utils import get_dataset_with_type
 from model_utils import get_long_alt_path
 from model_utils import get_normalized_alt_representation
 from model_utils import make_choices_tuple
+from model_utils import JSONDataSubfieldsMixin
 from model_utils import UniqueUidModelMixin
 from model_utils import VisibleFieldMixin
 from utils import uppercase_underscore
@@ -743,7 +744,7 @@ class ReferenceGenome(UniqueUidModelMixin):
         mvm.drop()
 
 
-class Contig(UniqueUidModelMixin):
+class Contig(UniqueUidModelMixin, JSONDataSubfieldsMixin):
 
     # A human-readable label for this genome.
     label = models.CharField(verbose_name="Name", max_length=256)
@@ -770,18 +771,6 @@ class Contig(UniqueUidModelMixin):
     # Contig metadata field for storing key-value pairs of contig
     # related information e.g. metadata['is_from_de_novo_assembly']=True
     metadata = PostgresJsonField()
-
-    def __getattr__(self, name):
-        """Automatically called if an attribute is not found in the typical
-        place.
-
-        Our implementation checks the metadata dict, raises AttributeError if
-        not found
-        """
-        try:
-            return self.metadata[name]
-        except:
-            raise AttributeError
 
     def get_model_data_root(self):
         """Get the root location for all data of this type in the project.
@@ -893,7 +882,7 @@ class Contig(UniqueUidModelMixin):
         ]
 
 
-class ExperimentSample(UniqueUidModelMixin):
+class ExperimentSample(UniqueUidModelMixin, JSONDataSubfieldsMixin):
     """Model representing data for a particular experiment sample.
 
     Usually this corresponds to a pair of fastq reads for a particular
@@ -920,24 +909,6 @@ class ExperimentSample(UniqueUidModelMixin):
         through='ExperimentSampleRelation',
         symmetrical=False,
         related_name='parents')
-
-    def __getattr__(self, name):
-        """Automatically called if an attribute is not found in the typical
-        place.
-
-        Our implementation checks the data dict, return the string 'undefined'
-        if the value is not found.
-
-        NOTE: Typically __getattr__ should raise an AttributeError if the value
-        cannot be found, but the noisy nature or our data means returning
-        'undefined' is more correct.
-
-        See: http://docs.python.org/2/reference/datamodel.html#object.__getattr__
-        """
-        try:
-            return self.data[name]
-        except:
-            raise AttributeError
 
     def add_child(self, sample):
         """
@@ -1283,7 +1254,7 @@ class AlignmentGroup(UniqueUidModelMixin):
         return raw_data
 
 
-class ExperimentSampleToAlignment(UniqueUidModelMixin):
+class ExperimentSampleToAlignment(UniqueUidModelMixin, JSONDataSubfieldsMixin):
     """Model that describes the alignment of a single ExperimentSample
     to an AlignmentGroup.
     """
@@ -1300,6 +1271,7 @@ class ExperimentSampleToAlignment(UniqueUidModelMixin):
         """
         The status of an Assembly
         """
+        NOT_STARTED = 'NOT STARTED'
         QUEUED = 'QUEUED TO ASSEMBLE'
         ASSEMBLING = 'ASSEMBLING'
         BUILDING_SEQUENCE_GRAPH = 'BUILDING SEQUENCE GRAPH'
@@ -1336,11 +1308,22 @@ class ExperimentSampleToAlignment(UniqueUidModelMixin):
         """Get the order of the models for displaying on the front-end.
         Called by the adapter.
         """
-        return [
+        fields = [
             {'field': 'experiment_sample'},
-            {'field': 'status', 'verbose': 'Job Status'},
-            {'field': 'error_link', 'verbose': 'Sample Alignment Log', 'is_href': True},
+            {'field': 'status', 'verbose': 'Alignment Status'},
+            {
+                'field': 'error_link', 'verbose':
+                'Sample Alignment Log', 'is_href': True
+            }
         ]
+
+        if settings.FLAG__GENOME_FINISHING_ENABLED:
+            fields.append({
+                'field': 'assembly_status',
+                'verbose': 'Contig Assembly Status'
+            })
+
+        return fields
 
     def get_model_data_root(self):
         """Get the root location for all data of this type in the project.
@@ -1372,6 +1355,15 @@ class ExperimentSampleToAlignment(UniqueUidModelMixin):
         data_dir = self.get_model_data_dir()
         if os.path.exists(data_dir):
             shutil.rmtree(data_dir)
+
+    def __getattr__(self, name):
+        """HACK: Override if assembly_status not started.
+        """
+        if name == 'assembly_status':
+            return self.data.get(
+                    'assembly_status',
+                    ExperimentSampleToAlignment.ASSEMBLY_STATUS.NOT_STARTED)
+        return super(ExperimentSampleToAlignment, self).__getattr__(name)
 
 
 ###############################################################################
@@ -1499,7 +1491,7 @@ class Variant(UniqueUidModelMixin):
                 "Currently, Variants are displayed via model_views.py")
 
 
-class VariantCallerCommonData(Model, VisibleFieldMixin):
+class VariantCallerCommonData(Model, VisibleFieldMixin, JSONDataSubfieldsMixin):
     """Model that describes data provided by a specific caller about a
     particular Variant.
 
@@ -1526,24 +1518,6 @@ class VariantCallerCommonData(Model, VisibleFieldMixin):
     data = PostgresJsonField()
 
     alignment_group = models.ForeignKey('AlignmentGroup')
-
-    def __getattr__(self, name):
-        """Automatically called if an attribute is not found in the typical
-        place.
-
-        Our implementation checks the data dict, return the string 'undefined'
-        if the value is not found.
-
-        NOTE: Typically __getattr__ should raise an AttributeError if the value
-        cannot be found, but the noisy nature or our data means returning
-        'undefined' is more correct.
-
-        See: http://docs.python.org/2/reference/datamodel.html#object.__getattr__
-        """
-        try:
-            return self.data[name]
-        except:
-            raise AttributeError
 
     @classmethod
     def default_view_fields(clazz):
@@ -1656,7 +1630,8 @@ class VariantAlternate(UniqueUidModelMixin, VisibleFieldMixin):
         }]
 
 
-class VariantEvidence(UniqueUidModelMixin, VisibleFieldMixin):
+class VariantEvidence(
+        UniqueUidModelMixin, VisibleFieldMixin, JSONDataSubfieldsMixin):
     """
     Evidence for a particular variant occurring in a particular
     ExperimentSample.
@@ -1684,28 +1659,6 @@ class VariantEvidence(UniqueUidModelMixin, VisibleFieldMixin):
 
         # call super's __init__ without the alt_value field if present
         super(VariantEvidence, self).__init__(*args, **kwargs)
-
-
-    def __getattr__(self, name):
-        """Automatically called if an attribute is not found in the typical
-        place.
-
-        Our implementation checks the data dict, return the string 'undefined'
-        if the value is not found.
-
-        NOTE: Typically __getattr__ should raise an AttributeError if the value
-        cannot be found, but the noisy nature or our data means returning
-        'undefined' is more correct.
-
-        See: 
-           http://docs.python.org/2/reference/datamodel.html#object.__getattr__
-
-        """
-        try:
-            return self.data[name]
-        except:
-            raise AttributeError
-
 
     def create_variant_alternate_association(self):
         gt_bases = self.data['GT_BASES']
