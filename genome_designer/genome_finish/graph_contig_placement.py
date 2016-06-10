@@ -113,7 +113,9 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             make_contig_reads_to_ref_alignments(contig)
 
     # Make Assembly dir
-    assembly_dir = contig_list[0].metadata['assembly_dir']
+    assembly_dir = os.path.join(
+            contig_list[0].experiment_sample_to_alignment.get_model_data_dir(),
+            'assembly')
 
     contig_alignment_dir = os.path.join(
             assembly_dir, 'contig_alignment')
