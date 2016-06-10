@@ -690,6 +690,10 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     sample_alignment.dataset_set.filter(
             type__in=STRUCTURAL_VARIANT_BAM_DATASETS).delete()
 
+    # Delete mobile element dataset (in case path has changed)
+    sample_alignment.dataset_set.filter(
+                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA).delete()
+
     # Delete all assembly files that don't have datasets.
     assembly_dir = os.path.join(
             sample_alignment.get_model_data_dir(),

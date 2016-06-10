@@ -138,6 +138,8 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
 
     use_me_alignment = bool(genbank_query.count())
     if use_me_alignment:
+        #TODO: Only do this once, not for every sample....
+        #TODO: This dataset should be linked to a reference, not a sample alignment....
         genbank_path = genbank_query[0].get_absolute_location()
         me_concat_fasta = os.path.join(contig_alignment_dir, 'me_concat.fa')
         if not sample_alignment.dataset_set.filter(
