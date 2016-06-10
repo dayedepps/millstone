@@ -196,9 +196,8 @@ def generate_contigs(sample_alignment,
     # Make assembly directory if it does not exist
     if not os.path.exists(assembly_dir):
         os.mkdir(assembly_dir)
-    else:
     # if it does exist, empty it
-    if os.path.exists(assembly_dir):
+    else:
         shutil.rmtree(assembly_dir)
         os.mkdir(assembly_dir)
 
