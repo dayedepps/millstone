@@ -245,7 +245,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         var_dict_list = [var_d for var_d in var_dict_list
                 if any([var_d['ref_seq'], var_d['alt_seq']])]
 
-        if use_me_alignment:
+        if ref_genome.is_annotated:
             me_trans_iv_pairs = me_translocation_walk(G)
 
             me_var_dict_list = [parse_path_into_ref_alt(
