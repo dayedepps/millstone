@@ -1,6 +1,7 @@
 import datetime
 import os
 import pickle
+import shutil
 import subprocess
 import re
 
@@ -187,7 +188,7 @@ def generate_contigs(sample_alignment,
     reference_genome.dataset_set.get_or_create(
             type=Dataset.TYPE.REFERENCE_GENOME_FASTA)[0]
 
-    # Make data_dir directory to house genome_finishing files
+    # Make assembly_dir directory to house genome_finishing files
     assembly_dir = os.path.join(
             sample_alignment.get_model_data_dir(),
             'assembly')
@@ -195,13 +196,11 @@ def generate_contigs(sample_alignment,
     # Make assembly directory if it does not exist
     if not os.path.exists(assembly_dir):
         os.mkdir(assembly_dir)
-
-    data_dir_counter = 0
-    data_dir = os.path.join(assembly_dir, str(data_dir_counter))
-    while(os.path.exists(data_dir)):
-        data_dir_counter += 1
-        data_dir = os.path.join(assembly_dir, str(data_dir_counter))
-    os.mkdir(data_dir)
+    else:
+    # if it does exist, empty it
+    if os.path.exists(assembly_dir):
+        shutil.rmtree(assembly_dir)
+        os.mkdir(assembly_dir)
 
     # Get a bam of sorted SV indicants with pairs
     sv_indicants_bam = get_sv_indicating_reads(sample_alignment,
@@ -267,7 +266,7 @@ def generate_contigs(sample_alignment,
 
     # Perform velvet assembly
     contig_files = assemble_with_velvet(
-            data_dir, velvet_opts, sv_indicants_bam,
+            assembly_dir, velvet_opts, sv_indicants_bam,
             sample_alignment)
 
 
@@ -445,7 +444,7 @@ def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
     return SV_indicants_filtered
 
 
-def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
+def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
         sample_alignment):
 
     timestamp = str(datetime.datetime.now())
@@ -457,7 +456,7 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
     contig_list = []
 
     # Write sv_indicants filename and velvet options to file
-    assembly_metadata_fn = os.path.join(data_dir, 'metadata.txt')
+    assembly_metadata_fn = os.path.join(assembly_dir, 'metadata.txt')
     with open(assembly_metadata_fn, 'w') as fh:
         assembly_metadata = {
             'sv_indicants_bam': sv_indicants_bam,
@@ -467,7 +466,7 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
 
     cmd = ' '.join([
             VELVETH_BINARY,
-            data_dir,
+            assembly_dir,
             str(velvet_opts['velveth']['hash_length'])] +
             ['-' + key + ' ' + str(velvet_opts['velveth'][key])
              for key in velvet_opts['velveth']
@@ -475,7 +474,7 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
             ['-bam', '-shortPaired', sv_indicants_bam])
     print 'velveth cmd:', cmd
 
-    velveth_error_output = os.path.join(data_dir, 'velveth_error_log.txt')
+    velveth_error_output = os.path.join(assembly_dir, 'velveth_error_log.txt')
     with open(velveth_error_output, 'w') as error_output_fh:
         subprocess.check_call(cmd, shell=True, executable=settings.BASH_PATH,
                 stderr=error_output_fh)
@@ -488,7 +487,7 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
 
     arg_list = [
             VELVETG_BINARY,
-            data_dir,
+            assembly_dir,
             '-ins_length', str(ins_length),
             '-exp_cov', str(exp_cov),
             '-scaffolding', 'no',
@@ -501,13 +500,13 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
     cmd = ' '.join(arg_list)
     print 'velvetg cmd:', cmd
 
-    velvetg_error_output = os.path.join(data_dir, 'velveth_error_log.txt')
+    velvetg_error_output = os.path.join(assembly_dir, 'velveth_error_log.txt')
     with open(velvetg_error_output, 'w') as error_output_fh:
         subprocess.check_call(cmd, shell=True, executable=settings.BASH_PATH,
                 stderr=error_output_fh)
 
     # Collect resulting contigs fasta
-    contigs_fasta = os.path.join(data_dir, 'contigs.fa')
+    contigs_fasta = os.path.join(assembly_dir, 'contigs.fa')
     contig_files.append(contigs_fasta)
 
     records = list(SeqIO.parse(contigs_fasta, 'fasta'))
@@ -542,7 +541,7 @@ def assemble_with_velvet(data_dir, velvet_opts, sv_indicants_bam,
         contig.metadata['coverage'] = coverage
         contig.metadata['timestamp'] = timestamp
         contig.metadata['node_number'] = contig_node_number
-        contig.metadata['assembly_dir'] = data_dir
+        contig.metadata['assembly_dir'] = assembly_dir
 
         contig.ensure_model_data_dir_exists()
         dataset_path = os.path.join(contig.get_model_data_dir(),
@@ -693,6 +692,14 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     # Delete bam indicant read Datasets and files.
     sample_alignment.dataset_set.filter(
             type__in=STRUCTURAL_VARIANT_BAM_DATASETS).delete()
+
+    # Delete all assembly files that don't have datasets.
+    assembly_dir = os.path.join(
+            sample_alignment.get_model_data_dir(),
+            'assembly')
+
+    shutil.rmtree(assembly_dir)
+
 
 def get_de_novo_variants(sample_alignment, sv_methods=CUSTOM_SV_METHODS):
     """Returns list of Variant objects corresponding to those called by
