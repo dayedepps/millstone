@@ -174,7 +174,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     G.ref_intervals = ref_intervals
 
     add_alignment_to_graph(G, contig_alignment_bam)
-    if use_me_alignment:
+    if ref_genome.is_annotated():
         add_me_alignment_to_graph(G, contig_alignment_to_me_bam)
 
 
