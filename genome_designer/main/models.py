@@ -56,6 +56,7 @@ from model_utils import make_choices_tuple
 from model_utils import UniqueUidModelMixin
 from model_utils import VisibleFieldMixin
 from utils import uppercase_underscore
+from utils.genbank_util import generate_genbank_mobile_element_multifasta
 from variants.filter_key_map_constants import MAP_KEY__ALTERNATE
 from variants.filter_key_map_constants import MAP_KEY__COMMON_DATA
 from variants.filter_key_map_constants import MAP_KEY__EVIDENCE
@@ -667,6 +668,37 @@ class ReferenceGenome(UniqueUidModelMixin):
         """
         return self.dataset_set.filter(
                 type=Dataset.TYPE.REFERENCE_GENOME_GENBANK).exists()
+
+    def ensure_mobile_element_multifasta(self):
+        """
+        If this genome is annotated, then ensure a multifasta
+        file exists that contains a list of all mobile elements, which are
+        annotated as type == "mobile_element". This is used by the SV
+        calling code. If it does not exist it will be created.
+        """
+        if not self.is_annotated():
+            raise AttributeError
+
+        me_fa_path = os.path.join(
+                self.get_snpeff_genbank_parent_dir(),
+                'mobile_elements.fa')
+
+        if not self.dataset_set.filter(
+                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA).exists():
+
+            generate_genbank_mobile_element_multifasta(
+                    self.get_snpeff_genbank_file_path(),
+                    me_fa_path)
+
+            me_fa_dataset = Dataset.objects.create(
+                    label=Dataset.TYPE.MOBILE_ELEMENT_FASTA,
+                    type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+
+            me_fa_dataset.filesystem_location = me_fa_path
+            me_fa_dataset.save()
+
+            self.dataset_set.add(me_fa_dataset)
+            self.save()
 
     def get_variant_caller_common_map(self):
         return self.variant_key_map[MAP_KEY__COMMON_DATA]

@@ -131,31 +131,17 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         subprocess.check_call(' '.join(['cat'] + contig_fastas),
                 shell=True, executable=settings.BASH_PATH, stdout=fh)
 
-    # Write mobile elements to file
+    # Get extracted mobile elements in addition to contigs
     ref_genome = sample_alignment.alignment_group.reference_genome
-    genbank_query = ref_genome.dataset_set.filter(
-            type=Dataset.TYPE.REFERENCE_GENOME_GENBANK)
 
-    use_me_alignment = bool(genbank_query.count())
-    if use_me_alignment:
-        #TODO: Only do this once, not for every sample....
-        #TODO: This dataset should be linked to a reference, not a sample alignment....
-        genbank_path = genbank_query[0].get_absolute_location()
-        me_concat_fasta = os.path.join(contig_alignment_dir, 'me_concat.fa')
-        if not sample_alignment.dataset_set.filter(
-                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA):
-            write_me_features_multifasta(genbank_path, me_concat_fasta)
-            add_dataset_to_entity(
-                    sample_alignment,
-                    Dataset.TYPE.MOBILE_ELEMENT_FASTA,
-                    Dataset.TYPE.MOBILE_ELEMENT_FASTA,
-                    me_concat_fasta)
+    if ref_genome.is_annotated:
+        ref_genome.ensure_mobile_element_multifasta()
+        me_fa_dataset = (ref_genome.dataset_set.get(
+                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+        me_concat_fasta = me_fa_dataset.get_absolute_location()
 
         contig_alignment_to_me_bam = os.path.join(
                 contig_alignment_dir, 'contig_alignment_to_me.bam')
-
-        me_concat_fasta = sample_alignment.dataset_set.get(
-                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA).get_absolute_location()
 
         if not os.path.exists(contig_alignment_to_me_bam):
             ensure_bwa_index(me_concat_fasta)

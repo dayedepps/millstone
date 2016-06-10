@@ -219,6 +219,9 @@ def add_chromosomes(reference_genome, dataset):
     elif dataset.type == Dataset.TYPE.REFERENCE_GENOME_GFF:
         # Don't add chromosomes for GFF. Used internally with JBrowse.
         return
+    elif dataset.type == Dataset.TYPE.MOBILE_ELEMENT_FASTA:
+        # Don't add chromosomes for mobile elements. Used by SV calling.
+        return
     else:
         raise AssertionError("Unexpected Dataset type {ds_type}".format(
                 ds_type=dataset.type))
