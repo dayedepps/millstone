@@ -697,7 +697,8 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
             sample_alignment.get_model_data_dir(),
             'assembly')
 
-    shutil.rmtree(assembly_dir)
+    if os.path.exists(assembly_dir):
+        shutil.rmtree(assembly_dir)
 
 
 def get_de_novo_variants(sample_alignment, sv_methods=CUSTOM_SV_METHODS):
