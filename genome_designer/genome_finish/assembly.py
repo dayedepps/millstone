@@ -829,7 +829,7 @@ def _extract_single_node_from_contig_reassembly(contig):
     # skip if the reassembly of the contig produced multiple contigs.
     # We could do something fancier here and look at the size of the largest
     # contig, but that's ok for now.
-    if len(records) > 1:
+    if len(records) > 1 or len(records) == 0:
         return None
     else:
         return records[0]
