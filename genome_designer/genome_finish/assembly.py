@@ -517,9 +517,9 @@ def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
         # 1. Grab reads from velvet to reassemble the contig
         make_contig_reads_to_ref_alignments(contig,
                 add_jbrowse_track=False, overwrite=overwrite)
-        contig_reads_bam = get_dataset_with_type(
-                contig,
-                Dataset.TYPE.BWA_SV_INDICANTS).get_absolute_location()
+        contig_reads_bam = os.path.join(
+                contig.get_model_data_dir(),
+                'sv_indicants.bam')
 
         # 2. Reassemble the contig from its whole reads using velvet -
         # this generates longer contigs because the graph will trim the
@@ -823,8 +823,8 @@ def _extract_single_node_from_contig_reassembly(contig):
     records = list(SeqIO.parse(single_contig_fasta, 'fasta'))
 
     # clean up extra velvet files
-    for fn in VELVET_OUTPUT_FILES:
-        os.remove(os.path.join(contig.get_model_data_dir(),fn))
+    # for fn in VELVET_OUTPUT_FILES:
+    #    os.remove(os.path.join(contig.get_model_data_dir(),fn))
 
     # skip if the reassembly of the contig produced multiple contigs.
     # We could do something fancier here and look at the size of the largest
