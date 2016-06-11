@@ -283,8 +283,8 @@ class Dataset(UniqueUidModelMixin):
     def internal_string(self, parent_entity):
         """
         A string used internally to describe a dataset for an entity.
-        Our convention is 
-            parent_entity.uid + '_' + dataset.type 
+        Our convention is
+            parent_entity.uid + '_' + dataset.type
             (uppercased, whitespace as underscores)
         """
         return str(parent_entity.uid) + '_' + uppercase_underscore(self.type)
@@ -292,7 +292,7 @@ class Dataset(UniqueUidModelMixin):
     def external_string(self, parent_entity):
         """
         A string used externally to describe a dataset for an entity.
-        Our convention is 
+        Our convention is
             parent_entity.label + ' ' + dataset.type
         """
         return str(parent_entity.label) + ' ' + self.type
@@ -381,7 +381,7 @@ class Dataset(UniqueUidModelMixin):
 
         with open(orig_file, 'rb') as fh_in:
             with open(new_compressed_file, 'wb') as fh_out:
-                subprocess.check_call(compression_command, 
+                subprocess.check_call(compression_command,
                         stdin=fh_in, stdout=fh_out)
 
         # Generate the new dataset model object
@@ -389,8 +389,8 @@ class Dataset(UniqueUidModelMixin):
         new_compressed_file_rel = self.filesystem_location + compression_type
 
         new_compressed_dataset = Dataset.objects.create(
-            label= self.label + ' (compressed)', 
-            type= self.type, 
+            label= self.label + ' (compressed)',
+            type= self.type,
             filesystem_location= new_compressed_file_rel)
 
         # Finally, add this new compressed dataset to the dataset_set

@@ -14,6 +14,7 @@ from genome_finish.millstone_de_novo_fns import get_coverage_stats
 from genome_finish.insertion_placement_read_trkg import extract_contig_reads
 from genome_finish.insertion_placement_read_trkg import make_contig_reads_dataset
 from genome_finish.insertion_placement_read_trkg import simple_align_with_bwa_mem
+from genome_finish.insertion_placement_read_trkg import make_contig_reads_to_ref_alignments
 from genome_finish.jbrowse_genome_finish import add_contig_reads_bam_track
 from main.models import Contig
 from main.models import Dataset
@@ -991,26 +992,11 @@ def get_match_regions(read):
     return match_regions
 
 
-def make_contig_reads_to_ref_alignments(contig):
-
-    # Get the reads aligned to ref that assembled the contig
-    contig_reads = extract_contig_reads(contig, 'all')
-
-    if len(contig_reads) == 0:
-        raise Exception('No reads were extracted from contig ' + contig.label)
-
-    # Add contig reads to contig dataset set as dataset type BWA_SV_INDICANTS
-    make_contig_reads_dataset(contig, contig_reads)
-
-    # Add bam track
-    add_contig_reads_bam_track(contig, Dataset.TYPE.BWA_SV_INDICANTS)
-
-
 def parse_path_into_ref_alt(path_list, contig_qname_to_uid,
         sample_alignment):
     """Takes the (InsertionVertices, Insertion Vertices) tuple path_list
     and returns a variant in the form of a dictionary with keys:
-    chromosome, pos, ref_seq, alt_seq
+    chromosome, pos, ref_seq, alt_seq_
     """
 
     ref_genome = sample_alignment.alignment_group.reference_genome
