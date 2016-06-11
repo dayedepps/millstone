@@ -684,8 +684,8 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
         coverage_subdir = '_'.join([
                 reads_subdir,
                 'COVERAGE'])
-        shutil.rmtree(reads_subdir)
-        shutil.rmtree(coverage_subdir)
+        shutil.rmtree(os.path.join(jbrowse_parent_path, reads_subdir))
+        shutil.rmtree(os.path.join(jbrowse_parent_path, reads_subdir))
 
     compile_tracklist_json(ref_genome)
 
