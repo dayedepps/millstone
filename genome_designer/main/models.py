@@ -139,6 +139,7 @@ class Dataset(UniqueUidModelMixin):
         FASTQC2_HTML = 'FASTQC Reverse HTML Output'
         SEQUENCE_GRAPH_PICKLE = 'Pickled NetworkX Sequence Graph'
         MOBILE_ELEMENT_FASTA = 'Mobile Element Fasta'
+        FEATURE_INDEX = 'Genbank Feature Index'
 
     TYPE_CHOICES = make_choices_tuple(TYPE)
     type = models.CharField(max_length=40, choices=TYPE_CHOICES)

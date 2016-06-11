@@ -1,4 +1,14 @@
 from Bio import SeqIO
+import pyinter
+import pickle
+
+from main.model_utils import get_dataset_with_type
+
+GBK_FEATURES_TO_EXTRACT = [
+        'CDS',
+        'mobile_element',
+        'tRNA',
+        'rRNA']
 
 def get_genbank_features_with_type(genbank_path, feature_type):
 
@@ -38,9 +48,35 @@ def generate_genbank_mobile_element_multifasta(genbank_path, output_fasta_path):
             fh.write('\n')
 
 
-def get_overlapping_features(genbank_path, chromosome, interval):
+def generate_gbk_feature_index(genbank_path, feature_index_output_path):
     """
-    TODO: This will be useful for annotating SVs and other quick
-    gene-centric UI annotations.
+    Create a pickled pyinterval index of genbank features so we can pull
+    them quickly.
     """
-    raise NotImplementedError
+
+    gbk_feature_list = []
+    with open(genbank_path, 'r') as fh:
+        for seq_record in SeqIO.parse(fh, 'genbank'):
+            interval_list = []
+
+            for f in seq_record.features:
+
+                if f.type not in GBK_FEATURES_TO_EXTRACT:
+                    continue
+
+                f_ivl = pyinter.closedopen(
+                        f.location.start, f.location.end)
+                f_ivl.type = f.type
+
+                if 'gene' in f.qualifiers:
+                    f_ivl.name = f.qualifiers['gene'][0]
+                elif 'mobile_element_type' in f.qualifiers:
+                    f_ivl.name = f.qualifiers['mobile_element_type'][0]
+                else:
+                    f_ivl.name = '<unknown>'
+
+                gbk_feature_list.append(f_ivl)
+
+    with open(feature_index_output_path, 'w') as fh:
+        pickle.dump(gbk_feature_list, fh)
+

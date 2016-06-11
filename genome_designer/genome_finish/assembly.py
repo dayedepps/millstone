@@ -463,7 +463,7 @@ def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
 
 
 def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
-        sample_alignment, overwrite=True):
+        sample_alignment, overwrite=True, reassemble_contig_from_reads=False):
 
     timestamp = str(datetime.datetime.now())
     contig_number_pattern = re.compile('^NODE_(\d+)_')
@@ -518,24 +518,24 @@ def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
 
         # Reassemble the contig from its constituent reads separately,
         # using a second velvet call.
+        if reassemble_contig_from_reads:
+            # 1. Grab reads from velvet to reassemble the contig
+            make_contig_reads_to_ref_alignments(contig,
+                    add_jbrowse_track=False, overwrite=overwrite)
+            contig_reads_bam = os.path.join(
+                    contig.get_model_data_dir(),
+                    'sv_indicants.bam')
 
-        # 1. Grab reads from velvet to reassemble the contig
-        make_contig_reads_to_ref_alignments(contig,
-                add_jbrowse_track=False, overwrite=overwrite)
-        contig_reads_bam = os.path.join(
-                contig.get_model_data_dir(),
-                'sv_indicants.bam')
-
-        # 2. Reassemble the contig from its whole reads using velvet -
-        # this generates longer contigs because the graph will trim the
-        # edges if there is a branchpoint. With only one node it should
-        # be very fast.
-        _run_velvet(contig.get_model_data_dir(), velvet_opts,
-                contig_reads_bam)
-        reassembled_seqrecord = _extract_single_node_from_contig_reassembly(
-                contig)
-        if reassembled_seqrecord:
-            seq_record.seq = reassembled_seqrecord.seq
+            # 2. Reassemble the contig from its whole reads using velvet -
+            # this generates longer contigs because the graph will trim the
+            # edges if there is a branchpoint. With only one node it should
+            # be very fast.
+            _run_velvet(contig.get_model_data_dir(), velvet_opts,
+                    contig_reads_bam)
+            reassembled_seqrecord = _extract_node_from_contig_reassembly(
+                    contig)
+            if reassembled_seqrecord:
+                seq_record.seq = reassembled_seqrecord.seq
 
         # Write the contig fasta and add it as a dataset to the contig object.
 
@@ -812,7 +812,7 @@ def _run_velvet(assembly_dir, velvet_opts, sv_indicants_bam):
                 stderr=error_output_fh)
 
 
-def _extract_single_node_from_contig_reassembly(contig):
+def _extract_node_from_contig_reassembly(contig):
     '''
     When we run velvet on a single node to build longer contigs (by including
     forked reads) we need to check the 'contigs.fa' file in the contig dir.
@@ -838,6 +838,33 @@ def _extract_single_node_from_contig_reassembly(contig):
         return None
     else:
         return records[0]
+
+def get_features_at_locations(ref_genome, intervals, chromosome=None):
+    """
+    Use the genbank index dataset and return gene or mobile element names
+    that are within these intervals.
+    """
+    feature_index_path = get_dataset_with_type(ref_genome,
+            Dataset.TYPE.FEATURE_INDEX).get_absolute_location()
+
+    with open(feature_index_path, 'w') as fh:
+
+        gbk_feature_list = pickle.load(feature_index_path)
+
+        # Dictionary of features to return, for each interval.
+        return_features = {}
+
+        # For each input interval, return a list of feature names that
+        # overlap.
+        for interval in intervals:
+            q_ivl = pyinter.closedopen(*interval)
+            features = [f_ivl for f_ivl in gbk_feature_list if
+                    q_ivl.intersect(f_ivl)]
+
+            return_features[interval] = features
+
+        return return_features
+
 
 
 
