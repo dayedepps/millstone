@@ -356,6 +356,42 @@ def get_coverage_stats(sample_alignment):
     return chrom_cov_dict
 
 
+def filter_out_unpaired_reads(input_bam_path, output_bam_path):
+
+    input_af = pysam.AlignmentFile(input_bam_path, 'rb')
+
+    # Build qname -> flag list dictionary
+    read_flags = {}
+    for read in input_af:
+        if read.qname not in read_flags:
+            read_flags[read.qname] = [read.flag]
+        else:
+            read_flags[read.qname].append(read.flag)
+
+    # Build qname -> is_paired dictionary
+    reads_with_pairs = {}
+    not_primary_alignment_flag = 256
+    supplementary_alignment_flag = 2048
+    for qname, flags in read_flags.items():
+        primary_count = 0
+        for f in flags:
+            if (not (f & not_primary_alignment_flag) and
+                    not (f & supplementary_alignment_flag)):
+                primary_count += 1
+        if primary_count == 2:
+            reads_with_pairs[qname] = True
+
+    # Write reads in input to output if not in bad_quality_names
+    output_af = pysam.AlignmentFile(output_bam_path, "wb",
+            template=input_af)
+    input_af.reset()
+    for read in input_af:
+        if read.qname in reads_with_pairs:
+            output_af.write(read)
+    output_af.close()
+    input_af.close()
+
+
 def get_avg_genome_coverage(sample_alignment):
     """Returns a float which is the average genome coverage, calculated as
     the average length-weighted read coverage over all chromosomes
