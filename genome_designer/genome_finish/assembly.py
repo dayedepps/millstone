@@ -678,15 +678,20 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
             'indiv_tracks')
 
     for contig_uid in contig_uids:
-        reads_subdir = '_'.join([
-                contig_uid,
-                'BWA_STRUCTURAL_VARIANT_INDICATING_READS'])
+        reads_subdir = os.path.join(
+                jbrowse_parent_path,'_'.join([
+                        contig_uid,
+                        'BWA_STRUCTURAL_VARIANT_INDICATING_READS']))
         coverage_subdir = '_'.join([
-                reads_subdir,
-                'COVERAGE'])
-        shutil.rmtree(os.path.join(jbrowse_parent_path, reads_subdir))
-        shutil.rmtree(os.path.join(jbrowse_parent_path, reads_subdir))
+                        reads_subdir,
+                        'COVERAGE'])
+        if os.path.exists(reads_subdir):
+            shutil.rmtree(reads_subdir)
+        if os.path.exists(coverage_subdir):
+            shutil.rmtree(coverage_subdir)
 
+    # Recompile the tracklist after deleting the indiv_tracks dirs for these
+    # deleted contigs.
     compile_tracklist_json(ref_genome)
 
     # Delete Variants associated with SVs called by this pipeline.
