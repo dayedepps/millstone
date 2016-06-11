@@ -150,11 +150,6 @@ def get_unmapped_reads(bam_filename, output_filename, avg_phred_cutoff=None):
                 avg_phred_cutoff)
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-def get_split_reads(bam_filename, output_filename):
-    """Isolate split reads from a sample alignment.
-=======
 def get_split_reads(bam_filename, output_filename):
     """Isolate split reads from a sample alignment.
 
@@ -236,8 +231,7 @@ def _parse_sam_line(line):
 
 
 def add_paired_mates(input_sam_path, source_bam_filename, output_sam_path):
->>>>>>> Fix BAM dataset delete and regen for SVs.
-
+    """
     This uses a python script supplied with Lumppy, that is run as a
     separate process.
 
