@@ -89,7 +89,7 @@ def get_clipped_reads_smart(input_bam_path, output_bam_path,
 
     SOFT_CLIP = 4
     HARD_CLIP = 5
-CLIP = [SOFT_CLIP, HARD_CLIP]
+    CLIP = [SOFT_CLIP, HARD_CLIP]
 
     input_af = pysam.AlignmentFile(input_bam_path, 'rb')
     output_af = pysam.AlignmentFile(output_bam_path, 'wb',
