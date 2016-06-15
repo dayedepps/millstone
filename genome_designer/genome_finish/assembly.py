@@ -9,6 +9,7 @@ import re
 from Bio import SeqIO
 from celery import chain
 from celery import chord
+from celery import group
 from celery import task
 from django.conf import settings
 
@@ -124,15 +125,26 @@ def run_de_novo_assembly_pipeline(sample_alignment_list,
     # First, we delete any data from previous runs of this custom SV-calling
     # pipeline, and update the status of the sample alignments to indicate
     # that custom SV-calling is taking place.
+
     for sample_alignment in sample_alignment_list:
-        clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment)
+        set_assembly_status(
+                sample_alignment,
+                ExperimentSampleToAlignment.ASSEMBLY_STATUS.CLEARING, force=True)
+
+    de_novo_cleanup_async_result(sample_alignment_list).get()
+
+    for sample_alignment in sample_alignment_list:
         set_assembly_status(
                 sample_alignment,
                 ExperimentSampleToAlignment.ASSEMBLY_STATUS.QUEUED, force=True)
 
+    # Recompile the tracklist after deleting the indiv_tracks dirs for these
+    # deleted contigs.
+    ref_genome = sample_alignment_list[0].alignment_group.reference_genome
+    compile_tracklist_json(ref_genome)
+
     # Next, we ensure reference genome fasta is indexed. We do this before
     # the async tasks.
-    ref_genome = sample_alignment_list[0].alignment_group.reference_genome
     ref_genome_fasta = ref_genome.dataset_set.get(
             type=Dataset.TYPE.REFERENCE_GENOME_FASTA).get_absolute_location()
     ensure_bwa_index(ref_genome_fasta)
@@ -185,6 +197,21 @@ def get_sv_caller_async_result(sample_alignment_list):
 
     return chord(generate_contigs_tasks + cov_detect_deletion_tasks)(
             chain(parse_vcf_tasks))
+
+def de_novo_cleanup_async_result(sample_alignment_list):
+    """Builds a celery group that contains tasks for deleting all contig and SV
+    data in parallel.
+
+    Returns an AsyncResult object.
+    """
+
+    cleanup_tasks = []
+    for sample_alignment in sorted(sample_alignment_list,
+            key=lambda x: x.experiment_sample.label):
+        cleanup_tasks.append(
+                clean_up_sv_calling_asnyc_task.si(sample_alignment))
+
+    return group(cleanup_tasks).apply_async()
 
 
 @task(ignore_result=False)
@@ -677,6 +704,13 @@ def parse_variants_from_vcf(sample_alignment,
             ExperimentSampleToAlignment.ASSEMBLY_STATUS.COMPLETED)
     sample_alignment.save()
 
+@task(ignore_result=False)
+def clean_up_sv_calling_asnyc_task(sample_alignment):
+    """
+    Async wrapper for cleanup function.
+    """
+    clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment)
+
 
 def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     """Deletes all model entities from previous runs of our custom SV
@@ -684,6 +718,7 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     files and cleans up contig stuff from the jbrowse track list, and
     recompiles the jbrowse tracklist.
     """
+    print 
     # Get all Contig names.
     contig_uids = [c.uid for c in sample_alignment.contig_set.all()]
 
@@ -708,10 +743,6 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
             shutil.rmtree(reads_subdir)
         if os.path.exists(coverage_subdir):
             shutil.rmtree(coverage_subdir)
-
-    # Recompile the tracklist after deleting the indiv_tracks dirs for these
-    # deleted contigs.
-    compile_tracklist_json(ref_genome)
 
     # Delete Variants associated with SVs called by this pipeline.
     var_list = get_de_novo_variants(sample_alignment)

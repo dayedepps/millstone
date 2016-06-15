@@ -47,10 +47,7 @@ def get_insertion_placement_positions(contig, strategy='all_reads'):
                     type=Dataset.TYPE.BWA_SV_INDICANTS).count())
 
     if strategy == 'all_reads' and not contig_reads_dataset_exists:
-        make_contig_reads_dataset(contig, contig_reads)
-
-        # Add bam track
-        add_contig_reads_bam_track(contig, Dataset.TYPE.BWA_SV_INDICANTS)
+        make_contig_reads_dataset(contig, contig_reads, add_jbrowse_track=True)
 
     # Align extracted reads to contig, check if assembled as reverse
     # complement relative to the reference
