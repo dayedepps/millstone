@@ -1272,6 +1272,7 @@ class ExperimentSampleToAlignment(UniqueUidModelMixin, JSONDataSubfieldsMixin):
         The status of an Assembly
         """
         NOT_STARTED = 'NOT STARTED'
+        CLEARING = 'CLEARING OLD DATA'
         QUEUED = 'QUEUED TO ASSEMBLE'
         ASSEMBLING = 'ASSEMBLING'
         BUILDING_SEQUENCE_GRAPH = 'BUILDING SEQUENCE GRAPH'
