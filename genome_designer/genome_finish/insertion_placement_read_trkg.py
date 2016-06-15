@@ -14,6 +14,7 @@ import pysam
 from genome_finish.contig_display_utils import Junction
 from genome_finish.jbrowse_genome_finish import add_contig_reads_bam_track
 from genome_finish.jbrowse_genome_finish import maybe_create_reads_to_contig_bam
+from main.models import Contig
 from main.models import Dataset
 from pipeline.read_alignment_util import ensure_bwa_index
 from pipeline.read_alignment_util import has_bwa_index
@@ -99,7 +100,6 @@ def get_insertion_placement_positions(contig, strategy='all_reads'):
         'left': left_ref_endpoints,
         'right': right_ref_endpoints
     }
-    contig.save()
 
     ref_insertion_endpoints = {}
     if are_ref_endpoints_placeable(left_ref_endpoints):
@@ -614,8 +614,10 @@ def find_contig_insertion_endpoints(contig,
         'right': contig_ins_right_end
     }
 
-def make_contig_reads_to_ref_alignments(contig, add_jbrowse_track=True,
+def make_contig_reads_to_ref_alignments(contig_uid, add_jbrowse_track=True,
     overwrite=False):
+
+    contig = Contig.objects.get(uid=contig_uid)
 
     dataset_query = contig.dataset_set.filter(
             type=Dataset.TYPE.BWA_SV_INDICANTS)

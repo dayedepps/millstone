@@ -1,6 +1,7 @@
 import datetime
 import os
 import pickle
+import pyinter
 import shutil
 import subprocess
 import re
@@ -20,7 +21,6 @@ from genome_finish.millstone_de_novo_fns import add_paired_mates
 from genome_finish.millstone_de_novo_fns import filter_low_qual_read_pairs
 from genome_finish.millstone_de_novo_fns import filter_out_unpaired_reads
 from genome_finish.millstone_de_novo_fns import get_altalign_reads
-from genome_finish.millstone_de_novo_fns import get_discordant_read_pairs
 from genome_finish.millstone_de_novo_fns import get_piled_reads
 from genome_finish.millstone_de_novo_fns import get_clipped_reads_smart
 from genome_finish.millstone_de_novo_fns import get_avg_genome_coverage
@@ -30,9 +30,9 @@ from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
 from main.models import Variant
 from main.model_utils import get_dataset_with_type
-from pipeline.read_alignment import get_discordant_read_pairs
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
-from genome_finish.millstone_de_novo_fns import get_split_reads
+from pipeline.read_alignment_util import extract_discordant_read_pairs
+from pipeline.read_alignment_util import extract_split_reads
 from pipeline.read_alignment_util import ensure_bwa_index
 
 from utils.bam_utils import concatenate_bams
@@ -277,19 +277,19 @@ def generate_contigs(sample_alignment,
                         input_velvet_opts[shallow_key][deep_key])
 
     # Perform velvet assembly and generate contig objects.
-    contig_list = assemble_with_velvet(
+    contig_uid_list = assemble_with_velvet(
             assembly_dir, velvet_opts, sv_indicants_bam,
             sample_alignment, overwrite=overwrite)
 
     # Evaluate contigs for mapping.
-    evaluate_contigs(contig_list)
+    evaluate_contigs(contig_uid_list)
 
     # Set assembly status for UI
     set_assembly_status(
             sample_alignment,
             ExperimentSampleToAlignment.ASSEMBLY_STATUS.WAITING_TO_PARSE)
 
-    return contig_list
+    return contig_uid_list
 
 
 def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
@@ -313,10 +313,10 @@ def get_sv_indicating_reads(sample_alignment, input_sv_indicant_classes={},
                     i, o,
                     phred_encoding=sample_alignment.experiment_sample.data.get(
                             'phred_encoding', None)),
-            Dataset.TYPE.BWA_SPLIT: get_split_reads,
+            Dataset.TYPE.BWA_SPLIT: extract_split_reads,
             Dataset.TYPE.BWA_UNMAPPED: lambda i, o: get_unmapped_reads(
                     i, o, avg_phred_cutoff=20),
-            Dataset.TYPE.BWA_DISCORDANT: get_discordant_read_pairs
+            Dataset.TYPE.BWA_DISCORDANT: extract_discordant_read_pairs
     }
 
     default_sv_indicant_classes = {
@@ -467,7 +467,7 @@ def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
     reference_genome = sample_alignment.alignment_group.reference_genome
 
     contig_files = []
-    contig_list = []
+    contig_uid_list = []
 
     _run_velvet(assembly_dir, velvet_opts, sv_indicants_bam)
 
@@ -504,7 +504,6 @@ def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
                 parent_reference_genome=reference_genome,
                 experiment_sample_to_alignment=(
                         sample_alignment))
-        contig_list.append(contig)
         contig.metadata['coverage'] = coverage
         contig.metadata['timestamp'] = timestamp
         contig.metadata['node_number'] = contig_node_number
@@ -546,38 +545,56 @@ def assemble_with_velvet(assembly_dir, velvet_opts, sv_indicants_bam,
                 'contig_fasta',
                 Dataset.TYPE.REFERENCE_GENOME_FASTA,
                 filesystem_location=dataset_path)
+        contig.save()
 
-    return contig_list
+        # append the uid to the contig_uid_list
+        contig_uid_list.append(contig.uid)
+
+    return contig_uid_list
 
 
-def evaluate_contigs(contig_list, skip_extracted_read_alignment=False,
+def evaluate_contigs(contig_uid_list, skip_extracted_read_alignment=False,
         use_read_alignment=True):
 
     def _length_weighted_coverage(contig):
         return contig.num_bases * contig.coverage
 
-    # Sort contig_list by highest length weighted coverage
+    # Request contig_list from db and order by highest length weighted coverage
+    contig_list = list(Contig.objects.filter(uid__in=contig_uid_list))
     contig_list.sort(key=_length_weighted_coverage, reverse=True)
 
     # All contigs have have same sample_alignment so grab sample alignment from
     # the first one.
     contig = contig_list[0]
     sample_alignment = contig.experiment_sample_to_alignment
+    ref_genome = sample_alignment.alignment_group.reference_genome
 
     # Attempt placing contigs. Get back placeable contigs,
     # translocation variants (dict obj), and mobile elements translocation
     # variants (dict obj).
-    placeable_contigs, var_dict_list, me_var_dict_list = graph_contig_placement(
-            contig_list, skip_extracted_read_alignment, use_read_alignment)
+    placeable_contig_uid_list, var_dict_list, me_var_dict_list = graph_contig_placement(
+            contig_uid_list, skip_extracted_read_alignment, use_read_alignment)
+
+    # update contig list with new features from graph_contig_placement
+    contig_list = list(Contig.objects.filter(uid__in=contig_uid_list))
+    contig_list.sort(key=_length_weighted_coverage, reverse=True)
+
+    # Annotate contig with the gene names that they fall within 50 bp of.
+    annotate_contig_junctions(contig_uid_list, ref_genome, dist=50)
 
     # Handle placeable contigs, if any.
-    if len(placeable_contigs):
+    if len(placeable_contig_uid_list):
+        placeable_contigs = Contig.objects.filter(
+                uid__in=placeable_contig_uid_list)
+
         for contig in placeable_contigs:
             contig.metadata['is_placeable'] = True
+            contig.save()
 
         placeable_contig_vcf_path = os.path.join(
                 sample_alignment.get_model_data_dir(),
                 'de_novo_assembled_contigs.vcf')
+
         # Write contigs to vcf
         export_contig_list_as_vcf(placeable_contigs, placeable_contig_vcf_path)
 
@@ -592,6 +609,7 @@ def evaluate_contigs(contig_list, skip_extracted_read_alignment=False,
     var_dict_vcf_path = os.path.join(
             sample_alignment.get_model_data_dir(),
             'de_novo_assembly_translocations.vcf')
+
     me_var_dict_vcf_path = os.path.join(
             sample_alignment.get_model_data_dir(),
             'de_novo_assembly_me_translocations.vcf')
@@ -608,7 +626,7 @@ def evaluate_contigs(contig_list, skip_extracted_read_alignment=False,
         # Write variant dicts to vcf
         export_var_dict_list_as_vcf(
                 var_dl, path,
-                contig.experiment_sample_to_alignment,
+                sample_alignment,
                 method)
 
         # Make dataset for contigs vcf
@@ -843,9 +861,9 @@ def get_features_at_locations(ref_genome, intervals, chromosome=None):
     feature_index_path = get_dataset_with_type(ref_genome,
             Dataset.TYPE.FEATURE_INDEX).get_absolute_location()
 
-    with open(feature_index_path, 'w') as fh:
+    with open(feature_index_path, 'r') as fh:
 
-        gbk_feature_list = pickle.load(feature_index_path)
+        gbk_feature_list = pickle.load(fh)
 
         # Dictionary of features to return, for each interval.
         return_features = {}
@@ -861,6 +879,66 @@ def get_features_at_locations(ref_genome, intervals, chromosome=None):
 
         return return_features
 
+def annotate_contig_junctions(contig_uid_list, ref_genome, dist=0):
+    """
+    Use the genbank feature index to annotate contig junctions
+    for eventual display on the frontend. This is potentially
+    redundant with SnpEFF's annotation.
+    """
 
+    if not ref_genome.is_annotated():
+        return
+
+    # create a list of contig junctions to annotate
+    contig_junctions = []
+    # contig_junctions are tuples that look like:
+    # (contig_object,
+    # 'right_or_left',
+    # junction_idx,
+    # junction interval tuple)
+
+    for contig_uid in contig_uid_list:
+        c = Contig.objects.get(uid=contig_uid)
+        if 'right_junctions' in c.metadata:
+            for i,j in enumerate(c.metadata['right_junctions']):
+                j_ivl = (j[0]-dist,j[0]+min(dist,1))
+                contig_junctions.append((c,'r',i,j_ivl))
+
+        if 'left_junctions' in c.metadata:
+            for i,j in enumerate(c.left_junctions):
+                j_ivl = (j[0]-dist,j[0]+min(dist,1))
+                contig_junctions.append((c,'l',i,j_ivl))
+
+    # extract all junction interval tuples
+    all_j_ivls = [i[3] for i in contig_junctions]
+
+    # get all the features from the intervals
+    j_ivl_to_f_ivl = get_features_at_locations(ref_genome, all_j_ivls)
+
+    # map the features back onto the junctions and save the contig objects.
+    for i, (contig, lr, j_i, j_ivl) in enumerate(contig_junctions):
+
+        if lr == 'l':
+            junction = contig.metadata['left_junctions'][j_i]
+        elif lr == 'r':
+            junction = contig.metadata['right_junctions'][j_i]
+
+        # if there exists a feature inverval that overlaps with
+        # a junction interval:
+        if j_ivl_to_f_ivl[j_ivl]:
+            feat_types, feat_names = zip(
+                    *[(feat.type, feat.name) for feat in j_ivl_to_f_ivl[j_ivl]
+                            if hasattr(feat,'name')])
+
+
+            # HACK/CRYPTIC FEATURE:
+            # If one (and only one) of the features is 'mobile_element',
+            # then show only that one.
+            if feat_types.count('mobile_element') == 1:
+                feat_names = [feat_names[feat_types.index('mobile_element')]    ]
+
+            junction[4] += feat_names
+
+        contig.save()
 
 

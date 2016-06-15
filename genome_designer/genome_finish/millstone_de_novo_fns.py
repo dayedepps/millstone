@@ -7,8 +7,6 @@ import pysam
 
 from genome_finish import __path__ as gf_path_list
 from genome_finish.insertion_placement_read_trkg import extract_left_and_right_clipped_read_dicts
-from pipeline.read_alignment import _filter_out_interchromosome_reads
-from pipeline.read_alignment_util import index_bam_file
 from main.models import Dataset
 from main.models import Variant
 from main.models import VariantSet
@@ -150,167 +148,129 @@ def get_unmapped_reads(bam_filename, output_filename, avg_phred_cutoff=None):
                 avg_phred_cutoff)
 
 
-def get_split_reads(bam_filename, output_filename):
-    """Isolate split reads from a sample alignment.
-
-    This uses a python script supplied with Lumppy, that is run as a
-    separate process.
-
-    NOTE THAT THIS SCRIPT ONLY WORKS WITH BWA MEM.
-    """
-
-    # Use lumpy bwa-mem split read script to pull out split reads.
-    filter_split_reads = ' | '.join([
-            # -F 0x100 option filters out secondary alignments
-            '{samtools} view -h -F 0x100 {bam_filename}',
-            'python {lumpy_bwa_mem_sr_script} -i stdin',
-            '{samtools} view -Sb -']).format(
-                    samtools=SAMTOOLS_BINARY,
-                    bam_filename=bam_filename,
-                    lumpy_bwa_mem_sr_script=
-                            settings.LUMPY_EXTRACT_SPLIT_READS_BWA_MEM)
-
-    try:
-        with open(output_filename, 'w') as fh:
-            subprocess.check_call(
-                    filter_split_reads, stdout=fh, shell=True,
-                    executable=BASH_PATH)
-
-        # sort the split reads, overwrite the old file
-        subprocess.check_call(
-                [SAMTOOLS_BINARY, 'sort', output_filename,
-                 os.path.splitext(output_filename)[0]])
-
-    except subprocess.CalledProcessError:
-        raise Exception('Exception caught in split reads generator, ' +
-                        'perhaps due to no split reads')
-
-def get_discordant_read_pairs(bam_filename, output_filename):
-    """Isolate discordant pairs of reads from a sample alignment.
-    """
-    assert os.path.exists(bam_filename), "BAM file '%s' is missing." % (
-            bam_filename)
-
-    # NOTE: This assumes the index just adds at .bai, w/ same path otherwise
-    # - will this always be true?
-    if not os.path.exists(bam_filename+'.bai'):
-        index_bam_file(bam_filename)
-
-    # Use bam read alignment flags to pull out discordant pairs only
-    filter_discordant = ' | '.join([
-            '{samtools} view -u -F 0x0002 {bam_filename} ',
-            '{samtools} view -u -F 0x0100 - ',
-            '{samtools} view -u -F 0x0004 - ',
-            '{samtools} view -u -F 0x0008 - ',
-            '{samtools} view -b -F 0x0400 - ']).format(
-                    samtools=settings.SAMTOOLS_BINARY,
-                    bam_filename=bam_filename)
-
-    try:
-        with open(output_filename, 'w') as fh:
-            subprocess.check_call(filter_discordant,
-                    stdout=fh, shell=True, executable=settings.BASH_PATH)
-
-        # sort the discordant reads, overwrite the old file
-        subprocess.check_call([settings.SAMTOOLS_BINARY, 'sort', output_filename,
-                os.path.splitext(output_filename)[0]])
-
-        _filter_out_interchromosome_reads(output_filename)
-
-    except subprocess.CalledProcessError:
-        raise Exception('Exception caught in discordant reads generator, '+
-                'perhaps due to no discordant reads')
-
-
-def _parse_sam_line(line):
-    parts = line.split()
-    return {
-        'read_id': parts[0],
-        'flags': parts[1]
-    }
-
-
 def add_paired_mates(input_sam_path, source_bam_filename, output_sam_path):
+
+    sam_file = pysam.AlignmentFile(input_sam_path)
+    input_qnames_to_read = {}
+    for read in sam_file:
+        input_qnames_to_read[read.qname] = True
+    sam_file.close()
+
+    original_alignmentfile = pysam.AlignmentFile(source_bam_filename, "rb")
+    output_alignmentfile = pysam.AlignmentFile(
+            output_sam_path, "wh", template=original_alignmentfile)
+    for read in original_alignmentfile:
+        if input_qnames_to_read.get(read.qname, False):
+            if not read.is_secondary and not read.is_supplementary:
+                output_alignmentfile.write(read)
+    output_alignmentfile.close()
+    original_alignmentfile.close()
+
+
+def filter_out_unpaired_reads(input_bam_path, output_bam_path):
+
+    input_af = pysam.AlignmentFile(input_bam_path, 'rb')
+
+    # Build qname -> flag list dictionary
+    read_flags = {}
+    for read in input_af:
+        if read.qname not in read_flags:
+            read_flags[read.qname] = [read.flag]
+        else:
+            read_flags[read.qname].append(read.flag)
+
+    # Build qname -> is_paired dictionary
+    reads_with_pairs = {}
+    not_primary_alignment_flag = 256
+    supplementary_alignment_flag = 2048
+    for qname, flags in read_flags.items():
+        primary_count = 0
+        for f in flags:
+            if (not (f & not_primary_alignment_flag) and
+                    not (f & supplementary_alignment_flag)):
+                primary_count += 1
+        if primary_count == 2:
+            reads_with_pairs[qname] = True
+
+    # Write reads in input to output if not in bad_quality_names
+    output_af = pysam.AlignmentFile(output_bam_path, "wb",
+            template=input_af)
+    input_af.reset()
+    for read in input_af:
+        if read.qname in reads_with_pairs:
+            output_af.write(read)
+    output_af.close()
+    input_af.close()
+
+
+def filter_low_qual_read_pairs(input_bam_path, output_bam_path,
+        avg_phred_cutoff=20):
+    """Filters out reads with average phred scores below cutoff
     """
-    This uses a python script supplied with Lumppy, that is run as a
-    separate process.
 
-    NOTE THAT THIS SCRIPT ONLY WORKS WITH BWA MEM.
+    # Put qnames with average phred scores below the cutoff into dictionary
+    bad_quality_qnames = {}
+    input_af = pysam.AlignmentFile(input_bam_path, "rb")
+    for read in input_af:
+        avg_phred = np.mean(read.query_qualities)
+        if avg_phred < avg_phred_cutoff:
+            bad_quality_qnames[read.qname] = True
+
+    # Write reads in input to output if not in bad_quality_names
+    output_af = pysam.AlignmentFile(output_bam_path, "wb",
+            template=input_af)
+    input_af.reset()
+    for read in input_af:
+        if not bad_quality_qnames.get(read.qname, False):
+            output_af.write(read)
+    output_af.close()
+    input_af.close()
+
+
+def create_de_novo_variants_set(alignment_group, variant_set_label,
+        callers_to_include=[
+                'DE_NOVO_ASSEMBLY', 'GRAPH_WALK', 'ME_GRAPH_WALK']):
+    """Put all the variants generated by VCFs which have INFO__METHOD
+    values in callers_to_include into a new VariantSet
+
+    Args:
+        alignment_group: An AlignmentGroup instance
+        variant_set_label: A label for the new VariantSet
+        callers_to_include: INFO__METHOD values to select
+            variants with
+    Returns:
+        variant_set: The VariantSet instance created
     """
 
-    # Use lumpy bwa-mem split read script to pull out split reads.
-    filter_split_reads = ' | '.join([
-            # -F 0x100 option filters out secondary alignments
-            '{samtools} view -h -F 0x100 {bam_filename}',
-            'python {lumpy_bwa_mem_sr_script} -i stdin',
-            '{samtools} view -Sb -']).format(
-                    samtools=SAMTOOLS_BINARY,
-                    bam_filename=bam_filename,
-                    lumpy_bwa_mem_sr_script=
-                            settings.LUMPY_EXTRACT_SPLIT_READS_BWA_MEM)
+    ref_genome = alignment_group.reference_genome
 
-    try:
-        with open(output_filename, 'w') as fh:
-            subprocess.check_call(
-                    filter_split_reads, stdout=fh, shell=True,
-                    executable=BASH_PATH)
+    # Get de novo variants
+    de_novo_variants = []
+    for variant in Variant.objects.filter(
+            reference_genome=ref_genome):
+        for vccd in variant.variantcallercommondata_set.all():
+            if vccd.data.get('INFO_METHOD', None) in callers_to_include:
+                de_novo_variants.append(variant)
+                continue
 
-        # sort the split reads, overwrite the old file
-        subprocess.check_call(
-                [SAMTOOLS_BINARY, 'sort', output_filename,
-                 os.path.splitext(output_filename)[0]])
-
-    except subprocess.CalledProcessError:
-        raise Exception('Exception caught in split reads generator, ' +
-                        'perhaps due to no split reads')
-
-def get_discordant_read_pairs(bam_filename, output_filename):
-    """Isolate discordant pairs of reads from a sample alignment.
-    """
-    assert os.path.exists(bam_filename), "BAM file '%s' is missing." % (
-            bam_filename)
-
-    # NOTE: This assumes the index just adds at .bai, w/ same path otherwise
-    # - will this always be true?
-    if not os.path.exists(bam_filename+'.bai'):
-        index_bam_file(bam_filename)
-
-    # Use bam read alignment flags to pull out discordant pairs only
-    filter_discordant = ' | '.join([
-            '{samtools} view -u -F 0x0002 {bam_filename} ',
-            '{samtools} view -u -F 0x0100 - ',
-            '{samtools} view -u -F 0x0004 - ',
-            '{samtools} view -u -F 0x0008 - ',
-            '{samtools} view -b -F 0x0400 - ']).format(
-                    samtools=settings.SAMTOOLS_BINARY,
-                    bam_filename=bam_filename)
-
-    try:
-        with open(output_filename, 'w') as fh:
-            subprocess.check_call(filter_discordant,
-                    stdout=fh, shell=True, executable=settings.BASH_PATH)
-
-        # sort the discordant reads, overwrite the old file
-        subprocess.check_call([settings.SAMTOOLS_BINARY, 'sort', output_filename,
-                os.path.splitext(output_filename)[0]])
-
-        _filter_out_interchromosome_reads(output_filename)
-
-    except subprocess.CalledProcessError:
-        raise Exception('Exception caught in discordant reads generator, '+
-                'perhaps due to no discordant reads')
+    variant_set = VariantSet.objects.create(
+            reference_genome=ref_genome,
+            label='de_novo_variants')
 
 
-def _parse_sam_line(line):
-    parts = line.split()
-    return {
-        'read_id': parts[0],
-        'flags': parts[1]
-    }
+    update_variant_in_set_memberships(
+        ref_genome,
+        [variant.uid for variant in de_novo_variants],
+        'add',
+        variant_set.uid)
+
+    return variant_set
+
 
 def get_coverage_stats(sample_alignment):
     """Returns a dictionary with chromosome seqrecord_ids as keys and
     subdictionaries as values.
+
     Each subdictionary has three keys: length, mean, and std which hold the
     particular chromosome's length, mean read coverage, and standard
     deviation of read coverage
@@ -355,41 +315,6 @@ def get_coverage_stats(sample_alignment):
     sample_alignment.save()
     return chrom_cov_dict
 
-
-def filter_out_unpaired_reads(input_bam_path, output_bam_path):
-
-    input_af = pysam.AlignmentFile(input_bam_path, 'rb')
-
-    # Build qname -> flag list dictionary
-    read_flags = {}
-    for read in input_af:
-        if read.qname not in read_flags:
-            read_flags[read.qname] = [read.flag]
-        else:
-            read_flags[read.qname].append(read.flag)
-
-    # Build qname -> is_paired dictionary
-    reads_with_pairs = {}
-    not_primary_alignment_flag = 256
-    supplementary_alignment_flag = 2048
-    for qname, flags in read_flags.items():
-        primary_count = 0
-        for f in flags:
-            if (not (f & not_primary_alignment_flag) and
-                    not (f & supplementary_alignment_flag)):
-                primary_count += 1
-        if primary_count == 2:
-            reads_with_pairs[qname] = True
-
-    # Write reads in input to output if not in bad_quality_names
-    output_af = pysam.AlignmentFile(output_bam_path, "wb",
-            template=input_af)
-    input_af.reset()
-    for read in input_af:
-        if read.qname in reads_with_pairs:
-            output_af.write(read)
-    output_af.close()
-    input_af.close()
 
 
 def get_avg_genome_coverage(sample_alignment):

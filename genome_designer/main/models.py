@@ -45,7 +45,6 @@ from django.core.urlresolvers import reverse
 from django.db import models
 from django.db.models import Model
 
-# from genome_finish.insertion_placement_read_trkg import Junction
 from genome_finish.contig_display_utils import create_contig_junction_links
 from model_utils import assert_unique_types
 from model_utils import ensure_exists_0775_dir
@@ -872,14 +871,14 @@ class Contig(UniqueUidModelMixin, JSONDataSubfieldsMixin):
         """
         return [
             {'field': 'label'},
-            {'field': 'experiment_sample'},
-            {'field': 'num_bases', 'verbose': 'Contig Length'},
-            {'field': 'coverage', 'verbose': 'Average Coverage'},
-            {'field': 'chromosome'},
+            {'field': 'experiment_sample', 'verbose': 'Sample'},
+            {'field': 'num_bases', 'verbose': 'Length'},
+            {'field': 'coverage', 'verbose': 'Avg. Coverage'},
+            #{'field': 'chromosome'},
             {'field': 'left_junctions_html', 'verbose':
-                    'Left Junctions<br>(Reference &rarr; Contig)'},
+                    'Left Junctions<br>(Ref &rarr; Contig)'},
             {'field': 'right_junctions_html', 'verbose':
-                    'Right Junctions<br>(Reference &rarr; Contig)'}
+                    'Right Junctions<br>(Ref &rarr; Contig)'}
         ]
 
 

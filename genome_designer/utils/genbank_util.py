@@ -72,9 +72,7 @@ def generate_gbk_feature_index(genbank_path, feature_index_output_path):
                     f_ivl.name = f.qualifiers['gene'][0]
                 elif 'mobile_element_type' in f.qualifiers:
                     f_ivl.name = f.qualifiers['mobile_element_type'][0]
-                else:
-                    f_ivl.name = '<unknown>'
-
+                # For now, if the gene has no '.name' or '.mobile_element_type', ignore
                 gbk_feature_list.append(f_ivl)
 
     with open(feature_index_output_path, 'w') as fh:

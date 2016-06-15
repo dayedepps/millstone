@@ -1201,9 +1201,10 @@ def prepare_ref_genome_related_datasets(ref_genome, dataset):
 
         # Create an indexed set of intervals so we can find contigs
         # and snps within genes without using snpEFF.
+
         feature_index_output_path = os.path.join(
                 ref_genome.get_snpeff_genbank_parent_dir(),
-                'mobile_elements.fa')
+                'gbk_feature_idx.pickle')
 
         generate_gbk_feature_index(
                 ref_genome.get_snpeff_genbank_file_path(),

@@ -1,4 +1,4 @@
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 import os
 import subprocess
 import shutil
@@ -77,7 +77,7 @@ def write_me_features_multifasta(genbank_path, output_fasta_path,
                 fh.write('\n')
 
 
-def graph_contig_placement(contig_list, skip_extracted_read_alignment,
+def graph_contig_placement(contig_uid_list, skip_extracted_read_alignment,
         use_alignment_reads=True):
     """Align contigs passed in contig_list to the reference and to any
     annotated mobile elements in the reference genbank and use the alignment
@@ -85,7 +85,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     walking algorithms that call structural variants from paths in the graph.
 
     Args:
-        contig_list: list of Contig objects
+        contig_uid_list: list of Contig objects
         skip_extracted_read_alignment: if False, extract the reads that
                 assembled each contig and make them a bam track on the
                 reference
@@ -93,7 +93,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
                 delete regions of moderate coverage
 
     Returns:
-         placeable_contigs: Contig objects with metadata fields holding
+         placeable_contig_uid_list: Contig objects with metadata fields holding
                 their reference placement parameters
          var_dict_list: list of dictionary representations of translocation
                 variants with keys: chromosome, pos, ref_seq, alt_seq
@@ -102,21 +102,29 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
                 ref_seq, alt_seq, MEINFO
     """
 
+    def _length_weighted_coverage(contig):
+        return contig.num_bases * contig.coverage
+
+    # Request contig_list from db and order by highest length weighted coverage
+    contig_list = list(Contig.objects.filter(uid__in=contig_uid_list))
+    contig_list.sort(key=_length_weighted_coverage, reverse=True)
+
     sample_alignment = contig_list[0].experiment_sample_to_alignment
     sample_alignment.data['assembly_status'] = (
             ExperimentSampleToAlignment.ASSEMBLY_STATUS.BUILDING_SEQUENCE_GRAPH
     )
     sample_alignment.save()
 
+    ref_genome = sample_alignment.alignment_group.reference_genome
+
     if not skip_extracted_read_alignment:
         # Make a bam track on the reference for each contig that shows only the
         # reads that assembled the contig and their mates
-        for contig in contig_list:
-            make_contig_reads_to_ref_alignments(contig)
+        for contig_uid in contig_uid_list:
+            make_contig_reads_to_ref_alignments(contig_uid)
 
     # Make Assembly dir
-    assembly_dir = os.path.join(
-            contig_list[0].experiment_sample_to_alignment.get_model_data_dir(),
+    assembly_dir = os.path.join(sample_alignment.get_model_data_dir(),
             'assembly')
 
     contig_alignment_dir = os.path.join(
@@ -127,16 +135,22 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     os.mkdir(contig_alignment_dir)
 
     # Concatenate contig fastas for alignment
-    contig_fastas = [get_fasta(c) for c in contig_list]
+    contig_fastas = OrderedDict([(c.uid, get_fasta(c)) for c in contig_list])
     contig_concat = os.path.join(contig_alignment_dir, 'contig_concat.fa')
     with open(contig_concat, 'w') as fh:
-        subprocess.check_call(' '.join(['cat'] + contig_fastas),
+        subprocess.check_call(' '.join(['cat'] + contig_fastas.values()),
                 shell=True, executable=settings.BASH_PATH, stdout=fh)
 
-    # Get extracted mobile elements in addition to contigs
-    ref_genome = sample_alignment.alignment_group.reference_genome
+    # Create dictionaries to translate contig uid to its fasta descriptor line
+    contig_qname_to_uid = {}
+    for contig_uid, contig_fasta_file in contig_fastas.items():
+        with open(contig_fasta_file, 'r') as fh:
+            descriptor = fh.next()
+            contig_qname_to_uid[
+                    descriptor.strip('>\n')] = contig_uid
 
-    if ref_genome.is_annotated:
+    # Get extracted mobile elements in addition to contigs
+    if ref_genome.is_annotated():
         ref_genome.ensure_mobile_element_multifasta()
         me_fa_dataset = get_dataset_with_type(
                 ref_genome,
@@ -155,7 +169,6 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
                     ['-T', '15'])
 
     # Align concatenated contig fastas to reference
-    ref_genome = contig_list[0].parent_reference_genome
     contig_alignment_bam = os.path.join(
             contig_alignment_dir, 'contig_alignment.bam')
     print 'Aligning contigs to reference'
@@ -175,9 +188,9 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
     G.ref_intervals = ref_intervals
 
     add_alignment_to_graph(G, contig_alignment_bam)
+
     if ref_genome.is_annotated():
         add_me_alignment_to_graph(G, contig_alignment_to_me_bam)
-
 
     # Add SEQUENCE_GRAPH_PICKLE dataset to sample alignment
     graph_pickle_path = os.path.join(
@@ -190,25 +203,16 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             Dataset.TYPE.SEQUENCE_GRAPH_PICKLE,
             graph_pickle_path)
 
-    detect_strand_chromosome_junctions(contig_list, contig_alignment_bam)
+    detect_strand_chromosome_junctions(contig_qname_to_uid, contig_alignment_bam)
 
-    # Create dictionaries to translate contig uid to its fasta descriptor line
-    contig_qname_to_uid = {}
-    for contig in contig_list:
-        with open(get_fasta(contig), 'r') as fh:
-            descriptor = fh.next()
-            contig_qname_to_uid[
-                    descriptor.strip('>\n')] = contig.uid
-
-    placeable_contigs = []
+    placeable_contig_uid_list = []
     iv_list = novel_seq_ins_walk(G)
-    sample_alignment = contig_list[0].experiment_sample_to_alignment
     if use_alignment_reads:
         coverage_stats = get_coverage_stats(sample_alignment)
         sample_alignment_bam = sample_alignment.dataset_set.get(
             type=Dataset.TYPE.BWA_ALIGN).get_absolute_location()
-    for insertion_vertices in iv_list:
 
+    for insertion_vertices in iv_list:
         contig_qname = insertion_vertices.enter_contig.seq_uid
         contig_uid = contig_qname_to_uid[contig_qname]
         contig = Contig.objects.get(uid=contig_uid)
@@ -231,9 +235,9 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
             chrom_cov_std = chrom_cov_stats['std']
             if deletion_length <= 0 or (
                     deletion_cov < chrom_cov_mean - chrom_cov_std):
-                placeable_contigs.append(contig)
+                placeable_contig_uid_list.append(contig.uid)
         else:
-            placeable_contigs.append(contig)
+            placeable_contig_uid_list.append(contig.uid)
 
     # Perform translocation walk
     if ref_genome.num_chromosomes == 1:
@@ -246,7 +250,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         var_dict_list = [var_d for var_d in var_dict_list
                 if any([var_d['ref_seq'], var_d['alt_seq']])]
 
-        if ref_genome.is_annotated:
+        if ref_genome.is_annotated():
             me_trans_iv_pairs = me_translocation_walk(G)
 
             me_var_dict_list = [parse_path_into_ref_alt(
@@ -261,7 +265,7 @@ def graph_contig_placement(contig_list, skip_extracted_read_alignment,
         var_dict_list = []
         me_var_dict_list = []
 
-    return placeable_contigs, var_dict_list, me_var_dict_list
+    return placeable_contig_uid_list, var_dict_list, me_var_dict_list
 
 
 def avg_coverage(bam, chromosome, start, end):
@@ -456,32 +460,27 @@ def add_alignment_to_graph(G, contig_alignment_bam):
     G.contig_intervals_list = contigs_intervals
 
 
-def detect_strand_chromosome_junctions(contig_list, contig_alignment_bam):
+def detect_strand_chromosome_junctions(contig_qname_to_uid, contig_alignment_bam):
     # Create dictionaries to translate contig uid to its fasta descriptor line
-    contig_qname_to_uid = {}
-    for contig in contig_list:
-        with open(get_fasta(contig), 'r') as fh:
-            descriptor = fh.next()
-            contig_qname_to_uid[
-                    descriptor.strip('>\n')] = contig.uid
+    contigs = Contig.objects.filter(uid__in=contig_qname_to_uid.values())
+    contig_uid_to_contig = dict([(contig.uid, contig) for contig in contigs])
 
     # Iterate over aligned contig 'reads' in contig alignment to ref bam
     contig_alignmentfile = pysam.AlignmentFile(contig_alignment_bam)
     for read in contig_alignmentfile:
 
         contig_uid = contig_qname_to_uid[read.qname]
+        contig = contig_uid_to_contig[contig_uid]
 
         match_regions = get_match_regions(read)
 
         # Add chromosome and RC information
         # TODO: Make this consensus based rather than assuming all
         # reads agree
-        contig = Contig.objects.get(uid=contig_uid)
         contig.metadata['chromosome'] = contig_alignmentfile.getrname(
                 read.reference_id)
         contig.metadata['is_reverse'] = read.is_reverse
         set_contig_junctions(contig, match_regions)
-        contig.save()
 
 
 def set_contig_junctions(contig, match_region_list):
