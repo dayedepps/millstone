@@ -29,7 +29,7 @@ from genome_finish.millstone_de_novo_fns import get_unmapped_reads
 from main.models import Contig
 from main.models import Dataset
 from main.models import ExperimentSampleToAlignment
-from main.models import Variant
+from main.models import VariantCallerCommonData
 from main.model_utils import get_dataset_with_type
 from pipeline.read_alignment import get_insert_size_mean_and_stdev
 from pipeline.read_alignment_util import extract_discordant_read_pairs
@@ -50,7 +50,6 @@ from utils.jbrowse_util import add_bam_file_track
 from utils.jbrowse_util import prepare_jbrowse_ref_sequence
 from utils.jbrowse_util import compile_tracklist_json
 from variants.filter_key_map_constants import MAP_KEY__COMMON_DATA
-from variants.materialized_variant_filter import lookup_variants
 from variants.vcf_parser import parse_vcf
 
 # Default args for velvet assembly
@@ -781,28 +780,24 @@ def get_de_novo_variants(sample_alignment, sv_methods=CUSTOM_SV_METHODS):
     if 'INFO_METHOD' not in ref_genome.variant_key_map[MAP_KEY__COMMON_DATA]:
         return []
 
-    # Otherwise, we build a query to fetch all SV variants using our internal
-    # query language.
-    or_clause = ' | '.join(['INFO_METHOD=' + m for m in sv_methods])
+    # Otherwise fetch all variants corresponding to SVs called by our custom
+    # methods. We do this in two steps.
 
-    filter_string = 'EXPERIMENT_SAMPLE_UID={sample_uid} & ({or_clause})'.format(
-        sample_uid=str(sample_alignment.experiment_sample.uid),
-        or_clause=or_clause)
+    # First, fetch all VCCD for this object, so we can inspect INFO_METHODs.
+    all_sample_vccd_list = (
+            VariantCallerCommonData.objects.select_related().filter(
+                    variantevidence__experiment_sample=
+                            sample_alignment.experiment_sample))
 
-    query_args = {
-            'filter_string': filter_string,
-            'melted': False
-    }
+    # Now filter, keeping only the ones that match one of our sv_methods.
+    filtered_variant_list = []
+    for vccd in all_sample_vccd_list:
+        if ('INFO_METHOD' in vccd.data and
+                vccd.data.get('INFO_METHOD') in sv_methods):
+            filtered_variant_list.append(vccd.variant)
 
-    de_novo_assembly_variants = lookup_variants(
-            query_args,
-            sample_alignment.alignment_group.reference_genome,
-            sample_alignment.alignment_group).result_list
+    return filtered_variant_list
 
-    variant_uids = set(v['UID'] for v in de_novo_assembly_variants)
-    var_list = Variant.objects.filter(uid__in=variant_uids)
-
-    return var_list
 
 def _run_velvet(assembly_dir, velvet_opts, sv_indicants_bam):
 
