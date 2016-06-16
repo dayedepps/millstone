@@ -210,7 +210,7 @@ def get_sv_caller_async_result(sample_alignment_list):
     variant_parsing = group(parse_vcf_tasks)
 
     sv_task_chain = (variant_finding |
-            _chordfinisher |
+            _chordfinisher.si() |
             variant_parsing)
 
     return sv_task_chain()
