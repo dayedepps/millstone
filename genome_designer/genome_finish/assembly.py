@@ -128,7 +128,8 @@ def run_de_novo_assembly_pipeline(sample_alignment_list,
     for sample_alignment in sample_alignment_list:
         set_assembly_status(
                 sample_alignment,
-                ExperimentSampleToAlignment.ASSEMBLY_STATUS.CLEARING, force=True)
+                ExperimentSampleToAlignment.ASSEMBLY_STATUS.CLEARING,
+                force=True)
 
     de_novo_cleanup_async_result(sample_alignment_list).get()
 
@@ -204,14 +205,15 @@ def get_sv_caller_async_result(sample_alignment_list):
         parse_vcf_tasks.append(
                 parse_variants_from_vcf.si(sample_alignment))
 
-    variant_finding = chord(
-            group(generate_contigs_tasks + cov_detect_deletion_tasks),
-            _chordfinisher.si())
+    variant_finding = group(generate_contigs_tasks + cov_detect_deletion_tasks)
 
     variant_parsing = group(parse_vcf_tasks)
 
-    async_result = chain(variant_finding, variant_parsing).apply_async()
-    return async_result
+    sv_task_chain = (variant_finding |
+            _chordfinisher |
+            variant_parsing)
+
+    return sv_task_chain()
 
 def de_novo_cleanup_async_result(sample_alignment_list):
     """Builds a celery group that contains tasks for deleting all contig and SV
@@ -680,6 +682,7 @@ def evaluate_contigs(contig_uid_list, skip_extracted_read_alignment=False,
 
 
 @task(ignore_result=False)
+@report_failure_stats('parse_variants_from_vcf_failure_stats.txt')
 def parse_variants_from_vcf(sample_alignment,
         vcf_datasets_to_parse=STRUCTURAL_VARIANT_VCF_DATASETS):
 
@@ -783,6 +786,13 @@ def clean_up_previous_runs_of_sv_calling_pipeline(sample_alignment):
     # Delete mobile element dataset (in case path has changed)
     sample_alignment.dataset_set.filter(
                 type=Dataset.TYPE.MOBILE_ELEMENT_FASTA).delete()
+
+    set_assembly_status(
+            sample_alignment,
+            sample_alignment.ASSEMBLY_STATUS.NOT_STARTED,
+            force=True)
+
+    sample_alignment.save()
 
     # Delete all assembly files that don't have datasets.
     assembly_dir = os.path.join(
