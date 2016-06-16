@@ -687,7 +687,7 @@ def parse_variants_from_vcf(sample_alignment,
         vcf_datasets_to_parse=STRUCTURAL_VARIANT_VCF_DATASETS):
 
     # Do nothing if the assembly for this sample alignment failed.
-    if sample_alignment.data['assembly_status'] == (
+    if sample_alignment.data.get('assembly_status') == (
             ExperimentSampleToAlignment.ASSEMBLY_STATUS.FAILED):
         print ('WARNING: SV assembly failed for Sample Alignment'+
                 ' {} ({}) so variant parsing was skipped. ').format(
