@@ -96,8 +96,7 @@ class TestGenomeFinishMG1655(TestCase):
                 experiment_sample=sample)
 
         # Run pipeline and wait on result
-        async_result = run_de_novo_assembly_pipeline([sample_align])
-        async_result.get()
+        run_de_novo_assembly_pipeline([sample_align])
 
         # Retrieve contigs
         contigs = Contig.objects.filter(

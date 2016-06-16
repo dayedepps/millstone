@@ -166,6 +166,16 @@ def kmer_coverage(C, L, k):
     """
     return C * (L - k + 1) / float(L)
 
+@task
+def _chordfinisher( *args, **kwargs ):
+    """
+    Needs to run at the end of a chord to delay the variant parsing step.
+    
+    http://stackoverflow.com/questions/
+    15123772/celery-chaining-groups-and-subtasks-out-of-order-execution
+    """
+    return "FINISHED VARIANT FINDING."
+
 
 def get_sv_caller_async_result(sample_alignment_list):
     """Builds a celery chord that contains tasks for calling SVs for each
@@ -194,8 +204,14 @@ def get_sv_caller_async_result(sample_alignment_list):
         parse_vcf_tasks.append(
                 parse_variants_from_vcf.si(sample_alignment))
 
-    return chord(generate_contigs_tasks + cov_detect_deletion_tasks)(
-            chain(parse_vcf_tasks))
+    variant_finding = chord(
+            group(generate_contigs_tasks + cov_detect_deletion_tasks),
+            _chordfinisher.si())
+
+    variant_parsing = group(parse_vcf_tasks)
+
+    async_result = chain(variant_finding, variant_parsing).apply_async()
+    return async_result
 
 def de_novo_cleanup_async_result(sample_alignment_list):
     """Builds a celery group that contains tasks for deleting all contig and SV
@@ -667,10 +683,18 @@ def evaluate_contigs(contig_uid_list, skip_extracted_read_alignment=False,
 def parse_variants_from_vcf(sample_alignment,
         vcf_datasets_to_parse=STRUCTURAL_VARIANT_VCF_DATASETS):
 
-    sample_alignment.data['assembly_status'] = (
-                ExperimentSampleToAlignment.ASSEMBLY_STATUS.PARSING_VARIANTS)
-    sample_alignment.save()
+    # Do nothing if the assembly for this sample alignment failed.
+    if sample_alignment.data['assembly_status'] == (
+            ExperimentSampleToAlignment.ASSEMBLY_STATUS.FAILED):
+        print ('WARNING: SV assembly failed for Sample Alignment'+
+                ' {} ({}) so variant parsing was skipped. ').format(
+                        ExperimentSampleToAlignment.label,
+                        ExperimentSampleToAlignment.uid)
+        return
 
+    sample_alignment.data['assembly_status'] = (
+            ExperimentSampleToAlignment.ASSEMBLY_STATUS.PARSING_VARIANTS)
+    sample_alignment.save()
 
     variant_list = []
     for dataset_type in vcf_datasets_to_parse:
