@@ -952,10 +952,13 @@ def annotate_contig_junctions(contig_uid_list, ref_genome, dist=0):
         # if there exists a feature inverval that overlaps with
         # a junction interval:
         if j_ivl_to_f_ivl[j_ivl]:
-            feat_types, feat_names = zip(
-                    *[(feat.type, feat.name) for feat in j_ivl_to_f_ivl[j_ivl]
-                            if hasattr(feat,'name')])
+            named_feats = [(feat.type, feat.name) for feat in
+                    j_ivl_to_f_ivl[j_ivl] if hasattr(feat, 'name')]
 
+            if not named_feats:
+                continue
+
+            feat_types, feat_names = zip(*named_feats)
 
             # HACK/CRYPTIC FEATURE:
             # If one (and only one) of the features is 'mobile_element',

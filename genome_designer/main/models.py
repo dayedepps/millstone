@@ -684,22 +684,31 @@ class ReferenceGenome(UniqueUidModelMixin):
                 self.get_snpeff_genbank_parent_dir(),
                 'mobile_elements.fa')
 
-        if not self.dataset_set.filter(
-                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA).exists():
+        me_dataset = self.dataset_set.filter(
+                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+        me_dataset_exists = me_dataset.exists()
+        me_fasta_exists = me_dataset_exists and os.path.exists(
+                me_dataset[0].get_absolute_location())
 
-            generate_genbank_mobile_element_multifasta(
-                    self.get_snpeff_genbank_file_path(),
-                    me_fa_path)
+        if me_dataset_exists and me_fasta_exists:
+            return
 
-            me_fa_dataset = Dataset.objects.create(
-                    label=Dataset.TYPE.MOBILE_ELEMENT_FASTA,
-                    type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+        if me_dataset_exists and not me_fasta_exists:
+            [d.delete() for d in me_dataset]
 
-            me_fa_dataset.filesystem_location = me_fa_path
-            me_fa_dataset.save()
+        generate_genbank_mobile_element_multifasta(
+                self.get_snpeff_genbank_file_path(),
+                me_fa_path)
 
-            self.dataset_set.add(me_fa_dataset)
-            self.save()
+        me_fa_dataset = Dataset.objects.create(
+                label=Dataset.TYPE.MOBILE_ELEMENT_FASTA,
+                type=Dataset.TYPE.MOBILE_ELEMENT_FASTA)
+
+        me_fa_dataset.filesystem_location = me_fa_path
+        me_fa_dataset.save()
+
+        self.dataset_set.add(me_fa_dataset)
+        self.save()
 
     def get_variant_caller_common_map(self):
         return self.variant_key_map[MAP_KEY__COMMON_DATA]
