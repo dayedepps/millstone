@@ -785,7 +785,7 @@ def get_de_novo_variants(sample_alignment, sv_methods=CUSTOM_SV_METHODS):
 
     # First, fetch all VCCD for this object, so we can inspect INFO_METHODs.
     all_sample_vccd_list = (
-            VariantCallerCommonData.objects.select_related().filter(
+            VariantCallerCommonData.objects.filter(
                     variantevidence__experiment_sample=
                             sample_alignment.experiment_sample))
 
