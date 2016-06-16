@@ -120,7 +120,6 @@ def run_de_novo_assembly_pipeline(sample_alignment_list,
     SV-calling pipeline also uses non-assembly based methods like low-coverage
     detection to call deletions.
     """
-
     # First, we delete any data from previous runs of this custom SV-calling
     # pipeline, and update the status of the sample alignments to indicate
     # that custom SV-calling is taking place.
@@ -189,7 +188,6 @@ def get_sv_caller_async_result(sample_alignment_list):
     """
     generate_contigs_tasks = []
     cov_detect_deletion_tasks = []
-    parse_vcf_tasks = []
     for sample_alignment in sorted(sample_alignment_list,
             key=lambda x: x.experiment_sample.label):
 
@@ -201,17 +199,11 @@ def get_sv_caller_async_result(sample_alignment_list):
         cov_detect_deletion_tasks.append(
                 cov_detect_deletion_make_vcf.si(sample_alignment))
 
-        # These tasks parse the resulting VCFs.
-        parse_vcf_tasks.append(
-                parse_variants_from_vcf.si(sample_alignment))
-
     variant_finding = group(generate_contigs_tasks + cov_detect_deletion_tasks)
-
-    variant_parsing = group(parse_vcf_tasks)
 
     sv_task_chain = (variant_finding |
             _chordfinisher.si() |
-            variant_parsing)
+            parse_variants_for_sample_alignment_list.si(sample_alignment_list))
 
     return sv_task_chain()
 
@@ -681,8 +673,6 @@ def evaluate_contigs(contig_uid_list, skip_extracted_read_alignment=False,
                 path)
 
 
-@task(ignore_result=False)
-@report_failure_stats('parse_variants_from_vcf_failure_stats.txt')
 def parse_variants_from_vcf(sample_alignment,
         vcf_datasets_to_parse=STRUCTURAL_VARIANT_VCF_DATASETS):
 
@@ -729,6 +719,15 @@ def parse_variants_from_vcf(sample_alignment,
     sample_alignment.data['assembly_status'] = (
             ExperimentSampleToAlignment.ASSEMBLY_STATUS.COMPLETED)
     sample_alignment.save()
+
+
+@task(ignore_result=False)
+@report_failure_stats('parse_variants_from_vcf_failure_stats.txt')
+def parse_variants_for_sample_alignment_list(sample_alignment_list):
+    for sample_alignment in sorted(sample_alignment_list,
+            key=lambda x: x.experiment_sample.label):
+        parse_variants_from_vcf(sample_alignment)
+
 
 @task(ignore_result=False)
 def clean_up_sv_calling_asnyc_task(sample_alignment):
